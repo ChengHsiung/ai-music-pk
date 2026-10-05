@@ -27,13 +27,20 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      # The single-file build, downloadable from the run page and usable offline.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ai-music-pk-offline
+          path: dist/index.html
       - uses: actions/upload-pages-artifact@v3
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && vars.DEPLOY_PAGES == 'true'
         with:
           path: dist
 
+  # GitHub Pages needs a public repo (or a paid plan). Turn it on by setting the
+  # repository variable DEPLOY_PAGES=true after enabling Pages with source "GitHub Actions".
   deploy:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && vars.DEPLOY_PAGES == 'true'
     needs: build
     runs-on: ubuntu-latest
     environment:
