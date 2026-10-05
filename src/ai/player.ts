@@ -1,7 +1,8 @@
-// Plays the AI melody on the keyboard (MIDI out) or, without one, on the computer speakers.
+// Plays melodies on the keyboard (MIDI out) or, without one, on the computer speakers.
 
 import type { MidiIO } from '../io/midi';
-import type { Melody, MelodyNote } from './melody';
+import type { NoteEvent } from '../music/quantize';
+import type { Melody } from './melody';
 
 /** Where the notes sound. `at` is a performance.now() time. */
 export interface Output {
@@ -82,21 +83,66 @@ export class SpeakerOutput implements Output {
   }
 }
 
+/** A note with its time in ms from the start of the track. */
+export interface TimedNote {
+  midi: number;
+  at: number;
+  dur: number;
+  velocity: number;
+  /** Melody note index, or the event id of a recorded note */
+  id: number;
+}
+
+export interface Track {
+  notes: TimedNote[];
+  /** ms from the start until the track is over */
+  end: number;
+}
+
+/** The last bar slows down by up to this fraction, like a player closing a piece. */
+const RITARDANDO = 0.3;
+
+/** Times the AI melody: steady tempo, slightly detached notes, a ritardando in the last bar. */
+export function melodyTrack(m: Melody, bpm: number): Track {
+  const stepMs = 60000 / bpm / 4;
+  const len = m.beatsPerBar * 4;
+  const total = m.bars * len;
+  const ritStart = total - len;
+  const warp = (step: number) => {
+    if (step <= ritStart) return step * stepMs;
+    const x = step - ritStart;
+    return (ritStart + x + (RITARDANDO * x * x) / (2 * len)) * stepMs;
+  };
+  const notes = m.notes.map((n, i) => {
+    const at = warp(n.start);
+    const length = warp(n.start + n.dur) - at;
+    const last = i === m.notes.length - 1;
+    return { midi: n.midi, at, dur: last ? length + 400 : length * 0.92, velocity: velocity(m, i), id: i };
+  });
+  return { notes, end: warp(total) };
+}
+
+/** Times a recorded performance exactly as it was played. */
+export function eventsTrack(events: NoteEvent[]): Track {
+  const done = events.filter((e) => e.end !== null).sort((a, b) => a.start - b.start);
+  if (done.length === 0) return { notes: [], end: 0 };
+  const t0 = done[0].start;
+  const notes = done.map((e) => ({ midi: e.midi, at: e.start - t0, dur: Math.max(30, e.end! - e.start), velocity: e.velocity, id: e.id }));
+  return { notes, end: Math.max(...notes.map((n) => n.at + n.dur)) };
+}
+
 export interface PlayerEvents {
-  /** A note starts sounding (index into melody.notes) */
-  onNote(index: number, note: MelodyNote): void;
+  /** A note starts sounding (index into track.notes) */
+  onNote(index: number, note: TimedNote): void;
   onEnd(): void;
 }
 
 const LOOKAHEAD_MS = 150;
-/** The last bar slows down by up to this fraction, like a player closing a piece. */
-const RITARDANDO = 0.3;
 
-/** Schedules the melody slightly ahead of time so the rhythm stays steady. */
+/** Schedules notes slightly ahead of time so the rhythm stays steady. */
 export class Player {
-  private melody: Melody | null = null;
+  private track: Track | null = null;
   private output: Output | null = null;
-  private stepMs = 150;
   private t0 = 0;
   private next = 0;
   private timer = 0;
@@ -108,31 +154,31 @@ export class Player {
   constructor(private events: PlayerEvents) {}
 
   /** Starts from note `from` after `delayMs`. */
-  play(melody: Melody, bpm: number, output: Output, from = 0, delayMs = 0) {
+  play(track: Track, output: Output, from = 0, delayMs = 0) {
     this.stop();
-    this.paused = false;
-    this.melody = melody;
+    this.track = track;
     this.output = output;
-    this.stepMs = 60000 / bpm / 4;
     this.next = from;
-    this.t0 = performance.now() + delayMs + 60 - this.warp(melody.notes[from]?.start ?? 0);
+    this.t0 = performance.now() + delayMs + 60 - (track.notes[from]?.at ?? 0);
     this.playing = true;
     this.timer = setInterval(() => this.schedule(), 25);
     this.schedule();
   }
 
   pause() {
-    if (!this.playing) return;
-    // Resume from the note that is sounding now (or the next one if none has started).
-    const resumeAt = Math.max(0, this.current);
+    if (!this.playing || !this.track) return;
+    // Resume from the note sounding now (with the rest of its chord), or from the start.
+    const notes = this.track.notes;
+    const at = this.current >= 0 ? notes[this.current].at : -Infinity;
+    const resumeAt = Math.max(0, notes.findIndex((n) => n.at >= at - 1));
     this.halt();
     this.next = resumeAt;
     this.paused = true;
   }
 
-  resume(bpm: number) {
-    if (!this.paused || !this.melody || !this.output) return;
-    this.play(this.melody, bpm, this.output, this.next);
+  resume() {
+    if (!this.paused || !this.track || !this.output) return;
+    this.play(this.track, this.output, this.next);
   }
 
   stop() {
@@ -150,26 +196,14 @@ export class Player {
     this.output?.silence();
   }
 
-  /** Time in ms from the start of the tune to a step, with a ritardando in the last bar. */
-  private warp(step: number): number {
-    const total = this.melody ? this.melody.bars * this.melody.beatsPerBar * 4 : 0;
-    const len = this.melody ? this.melody.beatsPerBar * 4 : 16;
-    const ritStart = total - len;
-    if (step <= ritStart || total === 0) return step * this.stepMs;
-    const x = step - ritStart;
-    return (ritStart + x + (RITARDANDO * x * x) / (2 * len)) * this.stepMs;
-  }
-
   private schedule() {
-    const m = this.melody!;
+    const { notes, end } = this.track!;
     const now = performance.now();
-    while (this.next < m.notes.length && this.t0 + this.warp(m.notes[this.next].start) < now + LOOKAHEAD_MS) {
+    while (this.next < notes.length && this.t0 + notes[this.next].at < now + LOOKAHEAD_MS) {
       const i = this.next++;
-      const n = m.notes[i];
-      const at = this.t0 + this.warp(n.start);
-      const length = this.warp(n.start + n.dur) - this.warp(n.start);
-      const last = i === m.notes.length - 1;
-      this.output!.play(n.midi, velocity(m, i), last ? length + 400 : length * 0.92, at);
+      const n = notes[i];
+      const at = this.t0 + n.at;
+      this.output!.play(n.midi, n.velocity, n.dur, at);
       this.uiTimers.push(
         setTimeout(() => {
           this.current = i;
@@ -177,14 +211,11 @@ export class Player {
         }, Math.max(0, at - now)),
       );
     }
-    if (this.next >= m.notes.length) {
-      const end = this.t0 + this.warp(m.bars * m.beatsPerBar * 4);
-      if (now >= end) {
-        this.halt();
-        this.next = 0;
-        this.current = -1;
-        this.events.onEnd();
-      }
+    if (this.next >= notes.length && now >= this.t0 + end) {
+      this.halt();
+      this.next = 0;
+      this.current = -1;
+      this.events.onEnd();
     }
   }
 }

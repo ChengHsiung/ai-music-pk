@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Melody } from '../src/ai/melody';
-import { Output, Player, velocity } from '../src/ai/player';
+import { eventsTrack, melodyTrack, Output, Player, velocity } from '../src/ai/player';
 import { C_MAJOR } from '../src/music/theory';
 
 // Two bars at 120 BPM: a sixteenth is 125 ms.
@@ -39,7 +39,7 @@ describe('Player', () => {
     const heard: number[] = [];
     let ended = 0;
     const player = new Player({ onNote: (i) => heard.push(i), onEnd: () => ended++ });
-    player.play(melody, 120, out);
+    player.play(melodyTrack(melody, 120), out);
     vi.advanceTimersByTime(6000);
 
     expect(out.played.map((p) => p.midi)).toEqual([60, 64, 67, 65, 62, 60]);
@@ -62,7 +62,7 @@ describe('Player', () => {
     const out = new Recorder();
     const heard: number[] = [];
     const player = new Player({ onNote: (i) => heard.push(i), onEnd: () => {} });
-    player.play(melody, 120, out);
+    player.play(melodyTrack(melody, 120), out);
     vi.advanceTimersByTime(1100); // the third note has started
     player.pause();
     expect(player.paused).toBe(true);
@@ -71,7 +71,7 @@ describe('Player', () => {
     vi.advanceTimersByTime(3000);
     expect(out.played.length).toBe(before); // nothing plays while paused
 
-    player.resume(120);
+    player.resume();
     vi.advanceTimersByTime(6000);
     expect(heard).toEqual([0, 1, 2, 2, 3, 4, 5]);
   });
@@ -80,7 +80,7 @@ describe('Player', () => {
     const out = new Recorder();
     let ended = 0;
     const player = new Player({ onNote: () => {}, onEnd: () => ended++ });
-    player.play(melody, 120, out);
+    player.play(melodyTrack(melody, 120), out);
     vi.advanceTimersByTime(600);
     player.stop();
     const n = out.played.length;
@@ -88,6 +88,36 @@ describe('Player', () => {
     expect(out.played.length).toBe(n);
     expect(ended).toBe(0);
     expect(player.playing).toBe(false);
+  });
+});
+
+describe('eventsTrack', () => {
+  it('replays a recorded performance with its own timing', () => {
+    const t = eventsTrack([
+      { id: 7, midi: 64, velocity: 70, start: 1500, end: 1900 },
+      { id: 5, midi: 60, velocity: 90, start: 1000, end: 1400 },
+      { id: 9, midi: 67, velocity: 80, start: 2000, end: null }, // still held: skipped
+    ]);
+    expect(t.notes).toEqual([
+      { midi: 60, at: 0, dur: 400, velocity: 90, id: 5 },
+      { midi: 64, at: 500, dur: 400, velocity: 70, id: 7 },
+    ]);
+    expect(t.end).toBe(900);
+  });
+
+  it('resumes a chord from its first note', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'performance'] });
+    const out = new Recorder();
+    const heard: number[] = [];
+    const player = new Player({ onNote: (i) => heard.push(i), onEnd: () => {} });
+    const chord = (start: number, ids: number[]) => ids.map((id) => ({ id, midi: 60 + id, velocity: 80, start, end: start + 300 }));
+    player.play(eventsTrack([...chord(0, [1, 2]), ...chord(1000, [3, 4])]), out);
+    vi.advanceTimersByTime(1200);
+    player.pause();
+    player.resume();
+    vi.advanceTimersByTime(2000);
+    expect(heard).toEqual([0, 1, 2, 3, 2, 3]);
+    vi.useRealTimers();
   });
 });
 

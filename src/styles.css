@@ -36,6 +36,8 @@ body {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.12);
 }
+.round-label { font-size: 22px; font-weight: 700; color: var(--muted); }
+.round-label:empty { display: none; }
 .midi-status { margin-left: auto; font-size: 15px; color: #ffa8a8; }
 .midi-status::before { content: '●  '; }
 .midi-status.ok { color: #8ce99a; }
@@ -95,6 +97,32 @@ body {
   color: var(--accent);
   padding: 4px 0 8px;
 }
+/* "AI is thinking": the prompt breathes and grows dots. */
+.prompt.thinking { animation: breathe 1.6s ease-in-out infinite; }
+.prompt.thinking::after { content: ''; animation: dots 1.5s steps(4) infinite; }
+@keyframes breathe { 50% { opacity: 0.55; } }
+@keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+
+.title-card { text-align: center; padding: 24px 0 8px; }
+.title-card .big { font-size: 88px; font-weight: 900; line-height: 1.1; color: #212529; }
+.title-card .vs { color: var(--motif); }
+.title-card .sub { font-size: 40px; font-weight: 700; color: var(--accent); margin-top: 6px; }
+.title-card .steps { display: inline-flex; gap: 28px; margin: 28px 0 8px; padding: 0; list-style: none; counter-reset: step; font-size: 24px; color: #495057; }
+.title-card .steps li { counter-increment: step; }
+.title-card .steps li::before { content: counter(step); display: inline-block; width: 1.6em; height: 1.6em; line-height: 1.6em; margin-right: 8px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; }
+.title-card[hidden] { display: none; }
+
+.compare { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.compare[hidden] { display: none; }
+.compare .col { min-width: 0; border-radius: 12px; padding: 10px 8px; }
+.compare .col h2 { margin: 0; text-align: center; font-size: 34px; }
+.compare .human { background: #e7f5ff; }
+.compare .human h2 { color: var(--accent); }
+.compare .ai { background: #fff4e6; }
+.compare .ai h2 { color: var(--motif); }
+.compare .col-meta { text-align: center; font-size: 16px; color: #495057; min-height: 1.3em; }
+.compare .placeholder { text-align: center; font-size: 22px; color: #868e96; padding: 60px 0; }
+
 .idea { font-size: 20px; color: #495057; text-align: center; padding-bottom: 6px; }
 .idea:empty { display: none; }
 .score-meta { font-size: 18px; color: #495057; text-align: center; }
@@ -151,6 +179,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); }
 button.danger { background: var(--danger); border-color: var(--danger); }
 button.ai { background: var(--motif); border-color: var(--motif); }
+button.next { background: var(--accent); border-color: var(--accent); font-weight: 700; }
+.controls .flow { flex-basis: 100%; }
 button[hidden] { display: none; }
 .controls select { padding: 6px; font-size: 15px; border-radius: 6px; border: 0; }
 
@@ -217,3 +247,7 @@ button[hidden] { display: none; }
 
 /* The audience does not need the on-screen piano. */
 .projector .vk { display: none; }
+
+/* With the host console open, the projector window shows only the music. */
+.has-console .controls,
+.has-console .vk { display: none; }

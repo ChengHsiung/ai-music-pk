@@ -5,9 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>真人 vs AI 音樂 PK</title>
   </head>
-  <body data-stage="free">
+  <body data-stage="title">
     <header class="topbar">
       <h1>真人 <span class="vs">vs</span> AI 音樂 PK</h1>
+      <div id="round-label" class="round-label"></div>
       <div id="stage-label" class="stage-label"></div>
       <div id="midi-status" class="midi-status">正在尋找鍵盤…</div>
     </header>
@@ -24,29 +25,43 @@
       </section>
 
       <section class="sheet">
+        <div id="title-card" class="title-card">
+          <div class="big">真人 <span class="vs">vs</span> AI</div>
+          <div class="sub">音樂創作 PK</div>
+          <ol class="steps">
+            <li>小朋友彈 3 個音</li>
+            <li>真人音樂家用這 3 個音創作</li>
+            <li>AI 也用這 3 個音創作</li>
+            <li>大家舉手投票！</li>
+          </ol>
+        </div>
         <div id="prompt" class="prompt"></div>
         <div id="idea" class="idea"></div>
         <div id="score-meta" class="score-meta"></div>
         <div id="live" class="notation"></div>
         <div id="score" class="notation" hidden></div>
+        <div id="compare" class="compare" hidden>
+          <div class="col human">
+            <h2>真人音樂家</h2>
+            <div id="cmp-human-meta" class="col-meta"></div>
+            <div id="cmp-human" class="notation"></div>
+          </div>
+          <div class="col ai">
+            <h2>AI</h2>
+            <div id="cmp-ai-meta" class="col-meta"></div>
+            <div id="cmp-ai" class="notation"></div>
+          </div>
+        </div>
       </section>
     </main>
 
     <div id="flash" class="flash" role="status"></div>
 
     <footer class="controls">
+      <div id="flow" class="group flow"></div>
       <div class="group">
-        <button id="btn-motif" class="primary" title="快捷鍵 1">① 小朋友出題</button>
-        <button id="btn-retake">重彈 3 個音</button>
-        <button id="btn-start" title="快捷鍵 2">② 開始演奏</button>
-        <button id="btn-stop" class="danger" title="快捷鍵 3">③ 結束演奏</button>
-        <button id="btn-free" title="快捷鍵 0">自由彈奏</button>
-      </div>
-      <div class="group">
-        <button id="btn-ai" class="ai" title="快捷鍵 4">④ AI 創作</button>
-        <button id="btn-ai-pause" title="快捷鍵 5">⏸ 暫停</button>
-        <button id="btn-ai-again">換一首</button>
-        <button id="btn-ai-offline" hidden>不等了，改用離線 AI</button>
+        <button id="btn-console" class="primary" title="在筆電螢幕開一個控制視窗，投影幕就不會出現按鈕">開啟主持人控制台</button>
+        <button id="btn-fullscreen">全螢幕投影</button>
         <label>AI
           <select id="ai-bars">
             <option value="8">8 小節</option>
@@ -56,14 +71,11 @@
         </label>
         <label>AI 速度 <input id="ai-bpm" type="number" min="50" max="160" step="1" /> BPM</label>
         <button id="btn-settings">AI 設定</button>
-      </div>
-      <div class="group">
-        <label>速度 <input id="bpm" type="number" min="40" max="200" step="1" placeholder="自動" /> BPM</label>
+        <label>真人速度 <input id="bpm" type="number" min="40" max="200" step="1" placeholder="自動" /> BPM</label>
         <button id="btn-requantize">重新整理樂譜</button>
         <label><input id="opt-solfege" type="checkbox" checked /> 顯示唱名</label>
         <label><input id="opt-vk" type="checkbox" checked /> 螢幕鍵盤</label>
         <button id="btn-test" title="從 Yamaha 鍵盤播出 Do Mi Sol Do">測試鍵盤發聲</button>
-        <button id="btn-fullscreen">全螢幕投影</button>
       </div>
     </footer>
 
