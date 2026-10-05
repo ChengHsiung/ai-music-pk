@@ -14,7 +14,7 @@
 ## 使用方式
 
 1. 用 USB 線把 Yamaha P-125 的 **USB TO HOST** 孔接到筆電。
-2. 用 **Chrome** 或 **Edge** 開啟網頁版（GitHub Pages），或直接雙擊 `index.html` 離線版。
+2. 用 **Chrome** 或 **Edge** 直接開啟離線版 `index.html`（見下方「離線版」）。
 3. 瀏覽器詢問「是否允許使用 MIDI 裝置」時按 **允許**。右上角顯示綠色「鍵盤已連接」就成功了。
 4. 按「測試鍵盤發聲」，Yamaha 應該會自己彈出 Do Mi Sol Do（第二階段 AI 演奏會用到）。
 5. 筆電接投影機，按「全螢幕投影」。
@@ -34,6 +34,10 @@
 ## 離線版
 
 `npm run build` 會產生單一檔案 `dist/index.html`，樂譜字型與程式全部包在裡面。複製到筆電後直接雙擊即可，不需要網路。
+
+每次推送到 GitHub，Actions 的執行頁面也會附上這個檔案（`ai-music-pk-offline`），可直接下載。
+
+網頁版（GitHub Pages）預設關閉，因為私人儲存庫需要付費方案才能開。要開啟時：儲存庫改為公開或升級方案 → Settings → Pages 的 Source 選 **GitHub Actions** → Settings → Secrets and variables → Actions → Variables 新增 `DEPLOY_PAGES` = `true`。
 
 ## 開發
 
