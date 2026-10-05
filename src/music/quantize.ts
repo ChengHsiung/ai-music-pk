@@ -133,7 +133,7 @@ export function quantize(events: NoteEvent[], opts: QuantizeOptions = {}): Quant
   const t0 = clusters[0][0].start;
 
   // Snap every note to the grid; chord members share their cluster's onset.
-  const snapped: { midi: number; id: number; on: number; off: number }[] = [];
+  const snapped: GridNote[] = [];
   for (const cluster of clusters) {
     const on = Math.round((cluster[0].start - t0) / step);
     for (const e of cluster) {
@@ -142,8 +142,34 @@ export function quantize(events: NoteEvent[], opts: QuantizeOptions = {}): Quant
     }
   }
 
-  const totalSteps = Math.max(...snapped.map((n) => n.off));
-  const barCount = Math.max(1, Math.ceil(totalSteps / stepsPerBar));
+  const bars = buildBars(snapped, { stepsPerBar, splitMidi: split, tidy: true });
+
+  const key =
+    opts.key ?? detectKey(snapped.map((n) => ({ midi: n.midi, weight: n.off - n.on })));
+
+  return { bpm: Math.round(60000 / beatMs), beatsPerBar, key, bars };
+}
+
+export interface GridNote {
+  midi: number;
+  id: number;
+  /** Onset and release in sixteenth-note steps from the start */
+  on: number;
+  off: number;
+}
+
+/**
+ * Lays grid notes out as complete bars on a grand staff. `tidy` applies the
+ * clean-ups a live performance needs (legato gaps, stray rests, the closing note).
+ */
+export function buildBars(
+  snapped: GridNote[],
+  opts: { stepsPerBar: number; splitMidi?: number; tidy: boolean; barCount?: number },
+): Bar[] {
+  const { stepsPerBar, tidy } = opts;
+  const split = opts.splitMidi ?? SPLIT_MIDI;
+  const totalSteps = Math.max(0, ...snapped.map((n) => n.off));
+  const barCount = Math.max(1, opts.barCount ?? 0, Math.ceil(totalSteps / stepsPerBar));
   const bars: Bar[] = Array.from({ length: barCount }, () => ({ treble: [], bass: [] }));
 
   for (const staff of ['treble', 'bass'] as const) {
@@ -162,7 +188,10 @@ export function quantize(events: NoteEvent[], opts: QuantizeOptions = {}): Quant
     }
     const chords = [...byOnset.values()].sort((a, b) => a.start - b.start);
     chords.forEach((c, i) => {
+      c.midis.sort((a, b) => a - b);
       const next = chords[i + 1];
+      if (next) c.end = Math.min(c.end, next.start);
+      if (!tidy) return;
       if (next) {
         // Players lift a little before the next note; a short gap is still legato, not a rest.
         const gap = next.start - c.end;
@@ -176,7 +205,6 @@ export function quantize(events: NoteEvent[], opts: QuantizeOptions = {}): Quant
         const barEnd = Math.ceil(c.end / stepsPerBar) * stepsPerBar;
         if (barEnd - c.end <= 4) c.end = barEnd;
       }
-      c.midis.sort((a, b) => a - b);
     });
 
     // Fill the gaps with rests so every bar is complete.
@@ -209,10 +237,7 @@ export function quantize(events: NoteEvent[], opts: QuantizeOptions = {}): Quant
     }
   }
 
-  const key =
-    opts.key ?? detectKey(snapped.map((n) => ({ midi: n.midi, weight: n.off - n.on })));
-
-  return { bpm: Math.round(60000 / beatMs), beatsPerBar, key, bars };
+  return bars;
 }
 
 function restTick(dur: number): Tick {

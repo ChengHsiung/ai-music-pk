@@ -41,6 +41,8 @@ export interface LiveGroup {
 
 export interface DrawOptions {
   fifths: number;
+  /** Minor key: spell the raised 6th and 7th with sharps */
+  minor?: boolean;
   showSolfege: boolean;
   /** Event ids drawn in the motif colour */
   motifIds?: Set<number>;
@@ -70,7 +72,7 @@ function chordNote(
   barState: Map<string, number> | null,
   isContinuation = false,
 ): StaveNote {
-  const pitches = midis.map((m) => spell(m, opts.fifths));
+  const pitches = midis.map((m) => spell(m, opts.fifths, opts.minor));
   const note = new StaveNote({
     keys: pitches.map(vexKey),
     duration,
@@ -91,7 +93,7 @@ function chordNote(
   });
   if (opts.showSolfege && !isContinuation) {
     const top = midis[midis.length - 1];
-    const label = new Annotation(solfege(top, opts.fifths))
+    const label = new Annotation(solfege(top, opts.fifths, opts.minor))
       .setFont('Arial', staff === 'treble' ? 15 : 14, 'bold')
       .setVerticalJustification(Annotation.VerticalJustify.BOTTOM);
     label.setStyle({ fillStyle: COLORS.label });
@@ -182,13 +184,28 @@ export interface ScoreOptions extends DrawOptions {
   barsPerLine?: number;
 }
 
-export function renderScore(el: HTMLElement, score: QuantizedScore, opts: ScoreOptions) {
+/** Lets a drawn score appear note by note while it is played. */
+export interface ScoreView {
+  /** Shows everything that starts before `step` (sixteenths); Infinity shows the whole score. */
+  reveal(step: number): void;
+  /** Marks the notes of these event ids as sounding now; returns the first one for scrolling. */
+  highlight(ids: number[]): Element | null;
+}
+
+interface Mark {
+  element: { getAttribute(name: string): unknown };
+  step: number;
+  ids: number[];
+}
+
+export function renderScore(el: HTMLElement, score: QuantizedScore, opts: ScoreOptions): ScoreView {
   const barsPerLine = opts.barsPerLine ?? 4;
+  const stepsPerBar = score.beatsPerBar * 4;
   const gap = 120;
   const lineHeight = 290;
   const lines = Math.ceil(score.bars.length / barsPerLine);
   const ctx = makeRenderer(el, lines * lineHeight + 20);
-  const drawOpts: DrawOptions = { ...opts, fifths: score.key.fifths };
+  const drawOpts: DrawOptions = { ...opts, fifths: score.key.fifths, minor: score.key.mode === 'minor' };
   const time = `${score.beatsPerBar}/4`;
 
   // Width of clef + key (+ time) at the start of a line.
@@ -200,6 +217,8 @@ export function renderScore(el: HTMLElement, score: QuantizedScore, opts: ScoreO
 
   const pendingTie: Record<StaffName, { note: StaveNote; line: number } | null> = { treble: null, bass: null };
   const ties: StaveTie[] = [];
+  const marks: Mark[] = [];
+  const stepOf = new Map<StaveNote, number>();
 
   score.bars.forEach((bar, b) => {
     const line = Math.floor(b / barsPerLine);
@@ -231,19 +250,27 @@ export function renderScore(el: HTMLElement, score: QuantizedScore, opts: ScoreO
     for (const staff of ['treble', 'bass'] as const) {
       const barState = new Map<string, number>();
       const notes = bar[staff].map((t) => tickToNote(t, staff, drawOpts, barState));
+      let step = b * stepsPerBar;
       bar[staff].forEach((t, i) => {
         const note = notes[i];
+        stepOf.set(note, step);
+        marks.push({ element: note, step, ids: t.ids });
         const prev = pendingTie[staff];
         if (t.tiedFromPrev && prev) {
           const idx = t.midis.map((_, k) => k);
+          const tieMarks = (tie: StaveTie) => {
+            ties.push(tie);
+            marks.push({ element: tie, step, ids: [] });
+          };
           if (prev.line === line) {
-            ties.push(new StaveTie({ firstNote: prev.note, lastNote: note, firstIndexes: idx, lastIndexes: idx }));
+            tieMarks(new StaveTie({ firstNote: prev.note, lastNote: note, firstIndexes: idx, lastIndexes: idx }));
           } else {
-            ties.push(new StaveTie({ firstNote: prev.note, lastNote: null, firstIndexes: idx, lastIndexes: idx }));
-            ties.push(new StaveTie({ firstNote: null, lastNote: note, firstIndexes: idx, lastIndexes: idx }));
+            tieMarks(new StaveTie({ firstNote: prev.note, lastNote: null, firstIndexes: idx, lastIndexes: idx }));
+            tieMarks(new StaveTie({ firstNote: null, lastNote: note, firstIndexes: idx, lastIndexes: idx }));
           }
         }
         pendingTie[staff] = t.tieToNext ? { note, line } : null;
+        step += t.dur;
       });
       const voice = new Voice({ numBeats: score.beatsPerBar, beatValue: 4 }).setMode(Voice.Mode.SOFT).addTickables(notes);
       voices.push(voice);
@@ -254,10 +281,40 @@ export function renderScore(el: HTMLElement, score: QuantizedScore, opts: ScoreO
     new Formatter().joinVoices([voices[0]]).joinVoices([voices[1]]).format(voices, available);
     voices[0].draw(ctx, treble);
     voices[1].draw(ctx, bass);
-    beams.forEach((beam) => beam.setContext(ctx).draw());
+    beams.forEach((beam) => {
+      beam.setContext(ctx).draw();
+      // A beam appears with its first note.
+      const step = Math.min(...beam.getNotes().map((n) => stepOf.get(n as StaveNote) ?? 0));
+      marks.push({ element: beam, step, ids: [] });
+    });
   });
 
   ties.forEach((t) => t.setContext(ctx).draw());
+
+  // Tag the SVG groups VexFlow drew so they can be shown and coloured later without redrawing.
+  const tagged: SVGElement[] = [];
+  for (const m of marks) {
+    const node = el.querySelector<SVGElement>(`[id="vf-${m.element.getAttribute('id')}"]`);
+    if (!node) continue;
+    node.dataset.step = String(m.step);
+    if (m.ids.length) node.dataset.ids = m.ids.join(' ');
+    tagged.push(node);
+  }
+
+  return {
+    reveal(step: number) {
+      for (const node of tagged) node.classList.toggle('pending', Number(node.dataset.step) >= step);
+    },
+    highlight(ids: number[]) {
+      let first: Element | null = null;
+      for (const node of tagged) {
+        const on = !!node.dataset.ids && node.dataset.ids.split(' ').some((id) => ids.includes(Number(id)));
+        node.classList.toggle('now', on);
+        if (on && !first) first = node;
+      }
+      return first;
+    },
+  };
 }
 
 function tickToNote(t: Tick, staff: StaffName, opts: DrawOptions, barState: Map<string, number>): StaveNote {

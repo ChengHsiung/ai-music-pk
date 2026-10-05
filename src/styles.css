@@ -95,10 +95,17 @@ body {
   color: var(--accent);
   padding: 4px 0 8px;
 }
+.idea { font-size: 20px; color: #495057; text-align: center; padding-bottom: 6px; }
+.idea:empty { display: none; }
 .score-meta { font-size: 18px; color: #495057; text-align: center; }
 .score-meta:empty { display: none; }
 .notation { width: 100%; }
 .notation svg { display: block; }
+/* The AI score appears note by note while it plays. */
+.notation .pending { visibility: hidden; }
+.notation .now,
+.notation .now * { fill: var(--accent) !important; stroke: var(--accent) !important; }
+[data-stage='ai'] .prompt { color: var(--motif); }
 
 .flash {
   position: fixed;
@@ -143,6 +150,27 @@ button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.2); }
 button:disabled { opacity: 0.4; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); }
 button.danger { background: var(--danger); border-color: var(--danger); }
+button.ai { background: var(--motif); border-color: var(--motif); }
+button[hidden] { display: none; }
+.controls select { padding: 6px; font-size: 15px; border-radius: 6px; border: 0; }
+
+.settings {
+  width: min(560px, 92vw);
+  border: 0;
+  border-radius: 14px;
+  padding: 20px 24px;
+  background: #1b2a4a;
+  color: var(--stage-ink);
+}
+.settings::backdrop { background: rgba(0, 0, 0, 0.55); }
+.settings h2 { margin: 0 0 12px; font-size: 22px; }
+.settings form { display: flex; flex-direction: column; gap: 10px; }
+.settings label { display: flex; flex-direction: column; gap: 6px; font-size: 15px; }
+.settings select,
+.settings input { padding: 8px; font-size: 15px; border-radius: 6px; border: 0; }
+.settings .hint { margin: 0; font-size: 13px; color: var(--muted); }
+.settings .row { display: flex; align-items: center; gap: 10px; }
+.settings .row.end { justify-content: flex-end; margin-top: 6px; }
 
 /* In fullscreen the host controls fade out until the mouse reaches them. */
 .projector .controls { opacity: 0; }
