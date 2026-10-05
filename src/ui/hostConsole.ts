@@ -51,7 +51,9 @@ button:hover:not(:disabled) { background: rgba(255,255,255,0.2); }
 button:disabled { opacity: 0.35; cursor: default; }
 .next { width: 100%; font-size: 22px; font-weight: 700; padding: 18px; background: #1c7ed6; border-color: #1c7ed6; margin-bottom: 12px; }
 .buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.next:hover:not(:disabled) { background: #1971c2; }
 .buttons .primary { background: #e8590c; border-color: #e8590c; }
+.buttons .primary:hover:not(:disabled) { background: #d9480f; }
 .row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 14px; font-size: 15px; }
 .row input:disabled { opacity: 0.4; }
 .row select, .row input { padding: 6px; border-radius: 6px; border: 0; width: 80px; }
