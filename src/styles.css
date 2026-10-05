@@ -1,0 +1,191 @@
+:root {
+  --stage-bg: #0f1b33;
+  --stage-ink: #f1f3f5;
+  --muted: #adb5bd;
+  --paper: #ffffff;
+  --accent: #1c7ed6;
+  --motif: #e8590c;
+  --ok: #2f9e44;
+  --danger: #e03131;
+  font-family: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--stage-bg);
+  color: var(--stage-ink);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 14px 28px;
+}
+.topbar h1 { margin: 0; font-size: 30px; letter-spacing: 1px; }
+.topbar .vs { color: var(--motif); }
+.stage-label {
+  font-size: 24px;
+  font-weight: 700;
+  padding: 4px 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.midi-status { margin-left: auto; font-size: 15px; color: #ffa8a8; }
+.midi-status::before { content: '●  '; }
+.midi-status.ok { color: #8ce99a; }
+
+.stage {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 20px;
+  padding: 0 28px 16px;
+  min-height: 0;
+}
+
+.motif {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.motif-title { font-size: 22px; font-weight: 700; color: var(--muted); }
+.motif-notes { display: flex; flex-direction: column; gap: 12px; width: 100%; }
+.slot {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px;
+  border: 3px dashed rgba(255, 255, 255, 0.25);
+  border-radius: 14px;
+}
+.slot .syl { font-size: 54px; font-weight: 800; line-height: 1; color: rgba(255, 255, 255, 0.3); }
+.slot .name { font-size: 20px; color: var(--muted); }
+.slot.filled { border: 3px solid var(--motif); background: rgba(232, 89, 12, 0.15); animation: pop 0.25s ease-out; }
+.slot.filled .syl { color: #fff; }
+.key-label { font-size: 18px; color: var(--muted); min-height: 1.4em; }
+
+@keyframes pop { from { transform: scale(0.85); } to { transform: scale(1); } }
+
+.sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: var(--paper);
+  color: #212529;
+  padding: 16px 20px;
+  overflow: auto;
+  min-height: 0;
+}
+.prompt {
+  font-size: 28px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--accent);
+  padding: 4px 0 8px;
+}
+.score-meta { font-size: 18px; color: #495057; text-align: center; }
+.score-meta:empty { display: none; }
+.notation { width: 100%; }
+.notation svg { display: block; }
+
+.flash {
+  position: fixed;
+  left: 50%;
+  top: 80px;
+  transform: translateX(-50%);
+  padding: 10px 24px;
+  border-radius: 999px;
+  background: var(--motif);
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+.flash.show { opacity: 1; }
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px 24px;
+  padding: 10px 28px;
+  background: rgba(0, 0, 0, 0.35);
+  transition: opacity 0.3s;
+}
+.controls .group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.controls label { display: flex; align-items: center; gap: 6px; font-size: 15px; }
+.controls input[type='number'] { width: 72px; padding: 6px; font-size: 15px; border-radius: 6px; border: 0; }
+button {
+  font: inherit;
+  font-size: 15px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--stage-ink);
+  cursor: pointer;
+}
+button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.2); }
+button:disabled { opacity: 0.4; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); }
+button.danger { background: var(--danger); border-color: var(--danger); }
+
+/* In fullscreen the host controls fade out until the mouse reaches them. */
+.projector .controls { opacity: 0; }
+.projector .controls:hover { opacity: 1; }
+
+.vk { padding: 8px 28px 14px; background: rgba(0, 0, 0, 0.35); }
+.vk[hidden] { display: none; }
+.vk-keys { position: relative; display: flex; height: 110px; user-select: none; touch-action: none; }
+.vk-key.white {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 6px;
+  background: #f8f9fa;
+  border: 1px solid #868e96;
+  border-radius: 0 0 6px 6px;
+  color: #495057;
+  font-size: 12px;
+}
+.vk-key.black {
+  position: relative;
+  width: 0;
+  z-index: 1;
+}
+.vk-key.black::after {
+  content: '';
+  position: absolute;
+  left: -11px;
+  width: 22px;
+  height: 66px;
+  background: #212529;
+  border-radius: 0 0 4px 4px;
+}
+.vk-key.white.active { background: #a5d8ff; }
+.vk-key.black.active::after { background: var(--accent); }
+
+@media (max-width: 900px) {
+  .stage { grid-template-columns: 1fr; }
+  .motif-notes { flex-direction: row; }
+  .slot .syl { font-size: 32px; }
+}
+
+/* The audience does not need the on-screen piano. */
+.projector .vk { display: none; }

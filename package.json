@@ -1,0 +1,24 @@
+{
+  "name": "ai-music-pk",
+  "version": "0.1.0",
+  "description": "真人 vs AI 音樂 PK：小朋友彈 3 個音，真人與 AI 各自續寫旋律",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "vexflow": "^5.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^8.3.2",
+    "vite-plugin-singlefile": "^2.3.3",
+    "vitest": "^5.0.3"
+  },
+  "private": true,
+  "type": "module"
+}

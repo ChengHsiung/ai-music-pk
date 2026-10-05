@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>真人 vs AI 音樂 PK</title>
+  </head>
+  <body data-stage="free">
+    <header class="topbar">
+      <h1>真人 <span class="vs">vs</span> AI 音樂 PK</h1>
+      <div id="stage-label" class="stage-label"></div>
+      <div id="midi-status" class="midi-status">正在尋找鍵盤…</div>
+    </header>
+
+    <main class="stage">
+      <section class="motif" aria-label="本局動機">
+        <div class="motif-title">本局動機</div>
+        <div id="motif-notes" class="motif-notes">
+          <div class="slot"><div class="syl">?</div><div class="name"></div></div>
+          <div class="slot"><div class="syl">?</div><div class="name"></div></div>
+          <div class="slot"><div class="syl">?</div><div class="name"></div></div>
+        </div>
+        <div id="key-label" class="key-label"></div>
+      </section>
+
+      <section class="sheet">
+        <div id="prompt" class="prompt"></div>
+        <div id="score-meta" class="score-meta"></div>
+        <div id="live" class="notation"></div>
+        <div id="score" class="notation" hidden></div>
+      </section>
+    </main>
+
+    <div id="flash" class="flash" role="status"></div>
+
+    <footer class="controls">
+      <div class="group">
+        <button id="btn-motif" class="primary" title="快捷鍵 1">① 小朋友出題</button>
+        <button id="btn-retake">重彈 3 個音</button>
+        <button id="btn-start" title="快捷鍵 2">② 開始演奏</button>
+        <button id="btn-stop" class="danger" title="快捷鍵 3">③ 結束演奏</button>
+        <button id="btn-free" title="快捷鍵 0">自由彈奏</button>
+      </div>
+      <div class="group">
+        <label>速度 <input id="bpm" type="number" min="40" max="200" step="1" placeholder="自動" /> BPM</label>
+        <button id="btn-requantize">重新整理樂譜</button>
+        <label><input id="opt-solfege" type="checkbox" checked /> 顯示唱名</label>
+        <label><input id="opt-vk" type="checkbox" checked /> 螢幕鍵盤</label>
+        <button id="btn-test" title="從 Yamaha 鍵盤播出 Do Mi Sol Do">測試鍵盤發聲</button>
+        <button id="btn-fullscreen">全螢幕投影</button>
+      </div>
+    </footer>
+
+    <div id="vk" class="vk"></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
