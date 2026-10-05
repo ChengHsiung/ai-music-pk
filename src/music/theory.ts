@@ -49,10 +49,25 @@ export function signatureAlters(fifths: number): Record<Letter, number> {
   return alters;
 }
 
-/** Spell a MIDI note in the given key: diatonic notes follow the signature, others use sharps in sharp keys and flats in flat keys. */
-export function spell(midi: number, fifths = 0): SpelledPitch {
+/**
+ * Spell a MIDI note in the given key: diatonic notes follow the signature, others use sharps in
+ * sharp keys and flats in flat keys. In minor keys the raised 6th and 7th keep their letters
+ * (C♯ in d minor, not D♭).
+ */
+export function spell(midi: number, fifths = 0, minor = false): SpelledPitch {
   const pc = pitchClass(midi);
   const sig = signatureAlters(fifths);
+
+  if (minor) {
+    const tonicLetter = LETTERS.indexOf(spell(9 + 7 * fifths, fifths).letter);
+    for (const offset of [5, 6]) {
+      const letter = LETTERS[(tonicLetter + offset) % 7];
+      const alter = sig[letter] + 1;
+      if (pitchClass(NATURAL_PC[letter] + alter) === pc) {
+        return { letter, alter, octave: Math.floor((midi - alter) / 12) - 1 };
+      }
+    }
+  }
 
   let best: { letter: Letter; alter: number; rank: number } | null = null;
   for (const letter of LETTERS) {
@@ -76,14 +91,14 @@ export function accidentalSymbol(alter: number): string {
 }
 
 /** Fixed-do syllable, e.g. 60 → "Do", 61 → "Do♯". */
-export function solfege(midi: number, fifths = 0): string {
-  const p = spell(midi, fifths);
+export function solfege(midi: number, fifths = 0, minor = false): string {
+  const p = spell(midi, fifths, minor);
   return SOLFEGE[p.letter] + accidentalSymbol(p.alter);
 }
 
 /** Scientific name, e.g. 60 → "C4", 70 in F major → "B♭4". */
-export function noteName(midi: number, fifths = 0): string {
-  const p = spell(midi, fifths);
+export function noteName(midi: number, fifths = 0, minor = false): string {
+  const p = spell(midi, fifths, minor);
   return p.letter.toUpperCase() + accidentalSymbol(p.alter) + p.octave;
 }
 

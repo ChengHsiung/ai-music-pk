@@ -76,7 +76,7 @@ export class VirtualKeyboard {
 
   private isTyping(e: KeyboardEvent) {
     const t = e.target as HTMLElement | null;
-    return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+    return !!t && (['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName) || t.isContentEditable);
   }
 
   private keyDown(e: KeyboardEvent) {

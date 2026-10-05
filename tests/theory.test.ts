@@ -23,6 +23,17 @@ describe('spell', () => {
     expect(spell(71, -6)).toEqual({ letter: 'c', alter: -1, octave: 5 });
     expect(vexKey(spell(71, -6))).toBe('cb/5');
   });
+
+  it('keeps the letters of the raised 6th and 7th in minor keys', () => {
+    expect(noteName(73, -1, true)).toBe('C♯5'); // leading tone of d minor
+    expect(noteName(71, -1, true)).toBe('B4'); // raised 6th of d minor
+    expect(noteName(73, -1)).toBe('D♭5'); // same note in F major
+    expect(noteName(68, 0, true)).toBe('G♯4'); // a minor
+    expect(noteName(62, -3, true)).toBe('D4'); // c minor: D stays diatonic
+    expect(noteName(71, -3, true)).toBe('B4');
+    expect(noteName(66, -2, true)).toBe('F♯4'); // g minor
+    expect(noteName(64, -2, true)).toBe('E4');
+  });
 });
 
 describe('solfege', () => {

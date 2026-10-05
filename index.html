@@ -25,6 +25,7 @@
 
       <section class="sheet">
         <div id="prompt" class="prompt"></div>
+        <div id="idea" class="idea"></div>
         <div id="score-meta" class="score-meta"></div>
         <div id="live" class="notation"></div>
         <div id="score" class="notation" hidden></div>
@@ -42,6 +43,21 @@
         <button id="btn-free" title="快捷鍵 0">自由彈奏</button>
       </div>
       <div class="group">
+        <button id="btn-ai" class="ai" title="快捷鍵 4">④ AI 創作</button>
+        <button id="btn-ai-pause" title="快捷鍵 5">⏸ 暫停</button>
+        <button id="btn-ai-again">換一首</button>
+        <button id="btn-ai-offline" hidden>不等了，改用離線 AI</button>
+        <label>AI
+          <select id="ai-bars">
+            <option value="8">8 小節</option>
+            <option value="12">12 小節</option>
+            <option value="16">16 小節</option>
+          </select>
+        </label>
+        <label>AI 速度 <input id="ai-bpm" type="number" min="50" max="160" step="1" /> BPM</label>
+        <button id="btn-settings">AI 設定</button>
+      </div>
+      <div class="group">
         <label>速度 <input id="bpm" type="number" min="40" max="200" step="1" placeholder="自動" /> BPM</label>
         <button id="btn-requantize">重新整理樂譜</button>
         <label><input id="opt-solfege" type="checkbox" checked /> 顯示唱名</label>
@@ -52,6 +68,37 @@
     </footer>
 
     <div id="vk" class="vk"></div>
+
+    <dialog id="settings" class="settings">
+      <form method="dialog">
+        <h2>AI 設定</h2>
+        <label>作曲方式
+          <select id="ai-engine">
+            <option value="auto">雲端 AI（Claude）優先，失敗或沒網路時改用離線 AI</option>
+            <option value="offline">只用離線 AI</option>
+          </select>
+        </label>
+        <label>Anthropic API 金鑰
+          <input id="ai-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…（沒有就留空，只用離線 AI）" />
+        </label>
+        <p class="hint">金鑰只存在這台電腦的瀏覽器裡，不在程式碼或 GitHub 上。活動結束後可以按「清除金鑰」。</p>
+        <div class="row">
+          <button type="button" id="btn-test-cloud">測試雲端 AI</button>
+          <span id="test-cloud-result" class="hint"></span>
+        </div>
+        <label>AI 從哪裡發聲
+          <select id="ai-output">
+            <option value="auto">有鍵盤用鍵盤，沒有就用電腦喇叭</option>
+            <option value="speaker">一律用電腦喇叭</option>
+          </select>
+        </label>
+        <p id="ai-output-status" class="hint"></p>
+        <div class="row end">
+          <button type="button" id="btn-clear-key">清除金鑰</button>
+          <button value="close" class="primary">完成</button>
+        </div>
+      </form>
+    </dialog>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
