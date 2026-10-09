@@ -1,6 +1,7 @@
 // Web MIDI wrapper: listens to every connected keyboard and sends to one output.
 
 export type NoteHandler = (midi: number, velocity: number, time: number) => void;
+export type PedalHandler = (down: boolean, time: number) => void;
 export type StatusHandler = (status: MidiStatus) => void;
 
 export interface MidiStatus {
@@ -17,11 +18,14 @@ export class MidiIO {
   private output: MIDIOutput | null = null;
   private noteOn: NoteHandler[] = [];
   private noteOff: NoteHandler[] = [];
+  private pedal: PedalHandler[] = [];
   private statusHandlers: StatusHandler[] = [];
   private status: MidiStatus = { supported: false, inputs: [], output: null };
 
   onNoteOn(h: NoteHandler) { this.noteOn.push(h); }
   onNoteOff(h: NoteHandler) { this.noteOff.push(h); }
+  /** The musician's sustain pedal (when one is plugged into the keyboard) */
+  onPedal(h: PedalHandler) { this.pedal.push(h); }
   onStatus(h: StatusHandler) {
     this.statusHandlers.push(h);
     h(this.status);
@@ -65,6 +69,7 @@ export class MidiIO {
     const time = e.timeStamp || performance.now();
     if (type === 0x90 && velocity > 0) this.noteOn.forEach((h) => h(note, velocity, time));
     else if (type === 0x80 || (type === 0x90 && velocity === 0)) this.noteOff.forEach((h) => h(note, velocity, time));
+    else if (type === 0xb0 && note === 64) this.pedal.forEach((h) => h(velocity >= 64, time));
   }
 
   private setStatus(s: MidiStatus) {
@@ -83,9 +88,15 @@ export class MidiIO {
     this.output.send([0x80, midi, 0], at + durationMs);
   }
 
+  /** Sends a control change (e.g. 64 = sustain pedal) at a performance.now() time. */
+  control(controller: number, value: number, at = performance.now()) {
+    this.output?.send([0xb0, controller, value], at);
+  }
+
   allNotesOff() {
     if (!this.output) return;
     (this.output as MIDIOutput & { clear?: () => void }).clear?.(); // drop notes scheduled ahead
+    this.output.send([0xb0, 64, 0]); // lift the pedal
     this.output.send([0xb0, 123, 0]);
   }
 }

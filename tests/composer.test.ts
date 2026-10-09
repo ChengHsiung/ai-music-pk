@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { composeOffline, phrasePlan, Scale } from '../src/ai/offlineComposer';
-import { AI_ID_BASE, Melody, melodySplit, scoreFromMelody, validateMelody } from '../src/ai/melody';
+import { FEELS } from '../src/ai/accompaniment';
+import { chooseFeel, offline } from '../src/ai/composer';
+import { AI_ID_BASE, AI_LEFT_ID, FEEL_BPM, Melody, melodySplit, scoreFromMelody, validateMelody } from '../src/ai/melody';
 import { C_MAJOR, detectKey, Key } from '../src/music/theory';
 
 const A_MINOR: Key = { fifths: 0, mode: 'minor', tonic: 9 };
@@ -13,14 +15,15 @@ function expectWellFormed(m: Melody, motif: number[], bars: number) {
   // Opens with the exact motif from the first beat.
   expect(m.notes.slice(0, motif.length).map((n) => n.midi)).toEqual(motif);
   expect(m.notes[0].start).toBe(0);
-  // Back to back, no gaps or overlaps, fills every bar.
+  // One note at a time; short rests (breaths) are fine, and the tune lasts to the end.
   for (let i = 0; i < m.notes.length; i++) {
     const n = m.notes[i];
     expect(n.dur).toBeGreaterThan(0);
-    expect(n.start + n.dur).toBe(i + 1 < m.notes.length ? m.notes[i + 1].start : total);
+    expect(n.start + n.dur).toBeLessThanOrEqual(i + 1 < m.notes.length ? m.notes[i + 1].start : total);
     expect(n.midi).toBeGreaterThanOrEqual(36);
     expect(n.midi).toBeLessThanOrEqual(96);
   }
+  expect(m.notes.at(-1)!.start + m.notes.at(-1)!.dur).toBe(total);
   // Ends on the tonic with a long note.
   const last = m.notes.at(-1)!;
   expect(((last.midi % 12) + 12) % 12).toBe(m.key.tonic);
@@ -108,13 +111,13 @@ describe('composeOffline', () => {
 describe('validateMelody', () => {
   const base = { bars: 2, beatsPerBar: 4, key: C_MAJOR, engine: 'cloud' as const };
 
-  it('restores the motif and closes gaps and overlaps', () => {
+  it('restores the motif, removes overlaps and keeps rests', () => {
     const v = validateMelody(
       {
         ...base,
         notes: [
           { midi: 61, start: 0, dur: 4 },
-          { midi: 64, start: 4, dur: 2 }, // gap until 8
+          { midi: 64, start: 4, dur: 2 }, // a rest until 8
           { midi: 67, start: 8, dur: 8 }, // overlaps the next note
           { midi: 65, start: 12, dur: 4 },
           { midi: 64, start: 16, dur: 4 },
@@ -125,11 +128,11 @@ describe('validateMelody', () => {
       [60, 64, 67],
     )!;
     expectWellFormed(v, [60, 64, 67], 2);
-    expect(v.notes[1]).toEqual({ midi: 64, start: 4, dur: 4 });
+    expect(v.notes[1]).toEqual({ midi: 64, start: 4, dur: 2 });
     expect(v.notes[2]).toEqual({ midi: 67, start: 8, dur: 4 });
   });
 
-  it('drops notes past the end and clamps the range', () => {
+  it('drops notes past the end and folds far-out notes back by octaves', () => {
     const v = validateMelody(
       {
         ...base,
@@ -147,10 +150,19 @@ describe('validateMelody', () => {
       [60, 64, 67],
     )!;
     expect(v.notes).toHaveLength(7);
-    expect(v.notes[3].midi).toBe(96);
+    expect(v.notes[3].midi).toBe(72);
   });
 
-  it('rejects a melody that is too short', () => {
+  it('moves an octave slip of the whole tune back', () => {
+    const v = validateMelody(
+      { ...base, notes: [72, 76, 79, 77, 76, 74, 72].map((midi, i) => ({ midi, start: i * 4, dur: 4 })) },
+      [60, 64, 67],
+    )!;
+    expect(v.notes.map((n) => n.midi)).toEqual([60, 64, 67, 65, 64, 62, 60]);
+  });
+
+  it('rejects a melody that is too short or starts late', () => {
+    expect(validateMelody({ ...base, notes: [60, 64, 67, 65, 64, 62, 60].map((midi, i) => ({ midi, start: 16 + i * 2, dur: 2 })) }, [60, 64, 67])).toBeNull();
     expect(validateMelody({ ...base, notes: [{ midi: 60, start: 0, dur: 32 }] }, [60, 64, 67])).toBeNull();
   });
 });
@@ -161,6 +173,29 @@ describe('melodySplit', () => {
     expect(melodySplit(line(60, 57, 72))).toBe(0);
     expect(melodySplit(line(48, 55, 62))).toBe(128);
     expect(melodySplit(line(45, 60, 76))).toBe(60);
+  });
+});
+
+describe('offline', () => {
+  it('gives every tune a feel, tempo, chords, a left hand and a title', () => {
+    const m = offline({ motif: [60, 64, 67], key: C_MAJOR, bars: 8, seed: 1 });
+    expect(FEELS).toContain(m.feel);
+    const [slow, fast] = FEEL_BPM[m.feel!];
+    expect(m.bpm).toBeGreaterThanOrEqual(slow);
+    expect(m.bpm).toBeLessThanOrEqual(fast);
+    expect(m.chords!.at(-1)!.symbol).toBe('C');
+    expect(m.left!.length).toBeGreaterThan(8);
+    expect(m.title).toBeTruthy();
+    expect(m.idea).toContain('Do Mi Sol');
+  });
+
+  it('follows the host and avoids the last feel on "compose again"', () => {
+    const req = { motif: [60, 64, 67], key: C_MAJOR, bars: 8 };
+    expect(chooseFeel({ ...req, feel: 'mysterious' })).toBe('mysterious');
+    for (let seed = 0; seed < 6; seed++) expect(chooseFeel({ ...req, seed, avoidFeel: 'bright' })).not.toBe('bright');
+    expect(offline({ ...req, feel: 'march' }).pedals).toEqual([
+      expect.objectContaining({ end: 128 }), // only the final chord is pedalled in a march
+    ]);
   });
 });
 
@@ -177,5 +212,16 @@ describe('scoreFromMelody', () => {
     const ids = score.bars.flatMap((b) => [...b.treble, ...b.bass]).flatMap((t) => t.ids);
     expect(Math.min(...ids)).toBe(AI_ID_BASE);
     expect(new Set(ids).size).toBe(m.notes.length);
+  });
+
+  it('puts the melody on the treble staff and the left hand on the bass staff', () => {
+    const m = offline({ motif: [55, 60, 64], key: C_MAJOR, bars: 8, seed: 2 });
+    const score = scoreFromMelody(m, 96);
+    const treble = new Set(score.bars.flatMap((b) => b.treble.flatMap((t) => t.ids)));
+    const bass = new Set(score.bars.flatMap((b) => b.bass.flatMap((t) => t.ids)));
+    expect([...treble].every((id) => id < AI_LEFT_ID)).toBe(true);
+    expect([...bass].every((id) => id >= AI_LEFT_ID)).toBe(true);
+    expect(treble.size).toBe(m.notes.length);
+    expect(bass.size).toBe(m.left!.length);
   });
 });

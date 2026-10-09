@@ -2,8 +2,9 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { solfege } from '../music/theory';
+import { Feel, FEEL_LABEL } from './accompaniment';
 import { composeCloud } from './cloudComposer';
-import type { ComposeRequest, Melody } from './melody';
+import { ComposeRequest, finishMelody, Melody, suggestFeels } from './melody';
 import { composeOffline } from './offlineComposer';
 
 export type Engine = 'auto' | 'offline';
@@ -35,13 +36,40 @@ export async function compose(req: ComposeRequest, settings: ComposeSettings, si
   return { ...offline(req), fallbackReason };
 }
 
+const OFFLINE_TITLES: Record<Feel, string[]> = {
+  gentle: ['月光搖籃', '晚安小雲朵', '輕輕的風'],
+  flowing: ['風中的小船', '溫暖的午後', '彩色的河'],
+  bright: ['跳跳糖', '開心小步舞', '泡泡飛呀飛'],
+  march: ['勇敢小兵', '出發吧！', '小小探險隊'],
+  mysterious: ['森林的秘密', '月夜探險', '神秘的門'],
+};
+
+const OFFLINE_PICTURE: Record<Feel, string> = {
+  gentle: '像媽媽輕輕哼的搖籃曲',
+  flowing: '像小船在河上慢慢漂',
+  bright: '像小兔子在草地上跳來跳去',
+  march: '像小隊伍神氣地向前走',
+  mysterious: '像在月光下打開一扇神秘的門',
+};
+
+/** The feel for a tune: the host's choice, or one that suits the motif and differs from the last tune. */
+export function chooseFeel(req: ComposeRequest): Feel {
+  if (req.feel) return req.feel;
+  const options = suggestFeels(req.motif, req.key).filter((f) => f !== req.avoidFeel);
+  return options[(req.seed ?? 0) % options.length];
+}
+
 export function offline(req: ComposeRequest): Melody {
-  const m = composeOffline(req);
+  const feel = chooseFeel(req);
+  const m = finishMelody({ ...composeOffline(req), feel }, feel);
   const minor = req.key.mode === 'minor';
   const motif = req.motif.map((n) => solfege(n, req.key.fifths, minor)).join(' ');
-  const tonic = solfege(m.notes.at(-1)!.midi, req.key.fifths, minor);
-  const steps = req.bars > 8 ? '重複、模進、倒影' : '重複和模進';
-  return { ...m, title: 'AI 的旋律', idea: `以「${motif}」為主題，用${steps}發展，最後回到 ${tonic} 結束` };
+  const titles = OFFLINE_TITLES[feel];
+  return {
+    ...m,
+    title: titles[(req.seed ?? 0) % titles.length],
+    idea: `「${motif}」變成一首${FEEL_LABEL[feel]}的小曲，${OFFLINE_PICTURE[feel]}`,
+  };
 }
 
 export function describeError(err: unknown): string {

@@ -156,6 +156,8 @@ export interface GridNote {
   /** Onset and release in sixteenth-note steps from the start */
   on: number;
   off: number;
+  /** Staff chosen by voice (e.g. the AI's left hand); otherwise by pitch */
+  staff?: 'treble' | 'bass';
 }
 
 /**
@@ -173,7 +175,7 @@ export function buildBars(
   const bars: Bar[] = Array.from({ length: barCount }, () => ({ treble: [], bass: [] }));
 
   for (const staff of ['treble', 'bass'] as const) {
-    const notes = snapped.filter((n) => (staff === 'treble' ? n.midi >= split : n.midi < split));
+    const notes = snapped.filter((n) => (n.staff ?? (n.midi >= split ? 'treble' : 'bass')) === staff);
     // One chord per onset; a chord ends at its shortest note or the next onset.
     const byOnset = new Map<number, Segment>();
     for (const n of notes) {

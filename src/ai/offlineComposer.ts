@@ -6,7 +6,9 @@
 // sequence over IV, approach, authentic cadence on the tonic). 12 and 16 bars add
 // a development phrase built on the inverted motif.
 
+import { degreeChord } from '../music/chords';
 import type { Key } from '../music/theory';
+import type { ChordSpan } from './accompaniment';
 import type { ComposeRequest, Melody, MelodyNote } from './melody';
 
 type Chord = 'I' | 'ii' | 'IV' | 'V' | 'vi';
@@ -16,6 +18,8 @@ interface BarPlan {
   cell?: 'orig' | 'seq' | 'inv';
   cadence?: 'half' | 'final';
 }
+
+const CHORD_ROOT: Record<Chord, number> = { I: 0, ii: 1, IV: 3, V: 4, vi: 5 };
 
 const CHORD_DEGREES: Record<Chord, number[]> = {
   I: [0, 2, 4],
@@ -246,6 +250,34 @@ export function scoreMelody(notes: MelodyNote[]): number {
   return score;
 }
 
+/** The plan's chords as symbols, with a dominant seventh before the final tonic. */
+export function planChords(key: Key, bars: number): ChordSpan[] {
+  const plan = phrasePlan(bars);
+  return plan.map((bar, b) => {
+    const seventh = bar.chord === 'V' && plan[b + 1]?.cadence === 'final';
+    return { start: b * 16, dur: 16, symbol: degreeChord(key, CHORD_ROOT[bar.chord], seventh).symbol };
+  });
+}
+
+/**
+ * Makes the tune breathe and repeat like a song: the consequent opens with the antecedent's
+ * first bar again, and each half cadence lets go of its last note a little early.
+ */
+function shape(notes: MelodyNote[], bars: number): MelodyNote[] {
+  const plan = phrasePlan(bars);
+  const answer = plan.length - 4; // first bar of the consequent
+  const first = notes.filter((n) => n.start < 16);
+  const out = notes.filter((n) => n.start < answer * 16 || n.start >= (answer + 1) * 16);
+  out.push(...first.map((n) => ({ ...n, start: n.start + answer * 16 })));
+  out.sort((a, b) => a.start - b.start);
+  plan.forEach((bar, b) => {
+    if (bar.cadence !== 'half') return;
+    const last = out.filter((n) => n.start >= b * 16 && n.start < (b + 1) * 16).at(-1);
+    if (last && last.dur >= 6) last.dur -= 2;
+  });
+  return out;
+}
+
 export function composeOffline(req: ComposeRequest): Melody {
   const seed = req.seed ?? Date.now();
   let best: MelodyNote[] = [];
@@ -258,5 +290,13 @@ export function composeOffline(req: ComposeRequest): Melody {
       best = notes;
     }
   }
-  return { notes: best, bars: phrasePlan(req.bars).length, beatsPerBar: 4, key: req.key, engine: 'offline' };
+  const bars = phrasePlan(req.bars).length;
+  return {
+    notes: shape(best, bars),
+    bars,
+    beatsPerBar: 4,
+    key: req.key,
+    engine: 'offline',
+    chords: planChords(req.key, bars),
+  };
 }

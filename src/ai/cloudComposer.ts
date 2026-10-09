@@ -1,107 +1,166 @@
-// Cloud composer: asks Claude to continue the motif. The API key is typed in on the
-// event computer and kept in that browser only; it is never part of the code.
+// Cloud composer: asks Claude to turn the child's three notes into a short song with chords.
+// The API key is typed in on the event computer and kept in that browser only; it is never
+// part of the code.
+//
+// Claude writes the melody in ABC notation (one string per bar), the way tunes are usually
+// written down, and the chords first, so it composes with harmony in mind instead of
+// juggling numbers. The left hand is then built from the chords in code (accompaniment.ts).
 
 import Anthropic from '@anthropic-ai/sdk';
-import { keyLabel, noteName } from '../music/theory';
-import { ComposeRequest, Melody, validateMelody } from './melody';
+import { abcKey, abcNote, parseAbcBars } from '../music/abc';
+import { keyLabel, solfege } from '../music/theory';
+import { ChordSpan, Feel, FEELS } from './accompaniment';
+import { ComposeRequest, FEEL_BPM, finishMelody, Melody, suggestFeels, validateMelody } from './melody';
 
 export const CLOUD_MODEL = 'claude-opus-5-5';
+/** Give up on the cloud after this long; the offline composer takes over. */
+const DEADLINE_MS = 110_000;
+
+const FEEL_TEXT: Record<Feel, string> = {
+  gentle: 'gentle: a lullaby, tender and calm, long notes and soft rocking',
+  flowing: 'flowing: a warm pop ballad, a singing line over rolling eighth notes',
+  bright: 'bright: playful and bouncy, dotted or short-short-long rhythms, light and happy',
+  march: 'march: brave and proud, strong downbeats, dotted rhythms, a confident tune',
+  mysterious: 'mysterious: curious and a little secret, quiet, a minor colour or one surprising turn',
+};
 
 const SCHEMA = {
   type: 'object',
   properties: {
-    title: { type: 'string', description: 'Short song title in Traditional Chinese' },
-    idea: { type: 'string', description: 'One sentence in Traditional Chinese for the audience' },
-    notes: {
+    feel: { type: 'string', enum: [...FEELS], description: 'Character of the piece; it also picks the accompaniment pattern' },
+    tempo: { type: 'integer', description: 'Beats per minute, inside the band for the chosen feel' },
+    chords: {
       type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          midi: { type: 'integer', description: 'MIDI note number, 60 = middle C' },
-          start: { type: 'integer', description: 'Onset in sixteenth-note steps from the beginning' },
-          dur: { type: 'integer', description: 'Length in sixteenth-note steps' },
-        },
-        required: ['midi', 'start', 'dur'],
-        additionalProperties: false,
-      },
+      description: 'One entry per bar, in order. Each entry is one chord for the whole bar or two chords (one per half bar), e.g. ["C"] or ["F", "G7"]',
+      items: { type: 'array', items: { type: 'string' } },
     },
+    melody: {
+      type: 'array',
+      description: 'One ABC string per bar, in order, with L:1/8 and the given key; each bar adds up to exactly 8 eighths',
+      items: { type: 'string' },
+    },
+    title: { type: 'string', description: 'Song title in Traditional Chinese, at most 10 characters' },
+    idea: { type: 'string', description: 'One sentence in Traditional Chinese for the audience, at most 30 characters' },
   },
-  required: ['title', 'idea', 'notes'],
+  required: ['feel', 'tempo', 'chords', 'melody', 'title', 'idea'],
   additionalProperties: false,
 };
 
-const SYSTEM = `You are the AI composer in a live "human musician vs AI" melody contest at a family event in Taiwan.
-A child has just played three notes on a Yamaha digital piano. You continue those three notes into a complete,
-singable melody. It is played back on the same piano and drawn note by note as staff notation on a projector,
-so children and parents can follow it. Write music that is memorable, warm and clearly built from the child's notes.`;
+const SYSTEM = `You are a songwriter for children's TV and Mandopop, playing the AI side of a live "human musician vs AI" contest at a family event in Taiwan. A child (5 to 10 years old) has just played three notes on a digital piano. While a human musician improvises from the same notes, you turn them into a short song: a melody with its chords. The app plays it on the same piano, with a left-hand accompaniment built from your chords, and draws it note by note on a projector. The audience then votes by raising hands.
 
-/** Lowest and highest notes the melody may use, around where the child played. */
-export function melodyRange(motif: number[]): [number, number] {
-  const lo = Math.max(48, Math.min(Math.min(...motif) - 5, 64));
-  const hi = Math.min(88, Math.max(Math.max(...motif) + 9, lo + 16));
+What makes it good for this audience:
+- A hook. Give the child's three notes a memorable rhythm. They open the tune and come back at least twice (as they are, moved to another pitch, or with the rhythm varied, never upside down), so the audience recognises "their" notes.
+- A real song form with repetition, for example a a' b a (two-bar units: statement, answer ending on the dominant, contrast with the high point, return and close) or a b a c (bars 5 to 6 bring back bars 1 to 2, then bars 7 to 8 reach the peak and close). A pattern moved up or down may appear at most twice; the third time breaks it.
+- Phrases that breathe. Each two-bar idea ends on a longer note or a short rest, and the middle of the song (the end of bar 4) has a clear breath: a long note and a rest, or a rest and a pickup into the next phrase. Leave at least two rests in the song.
+- A rhythmic identity. One signature rhythm (a dotted note, a syncopation or a pickup) that returns, and one contrasting rhythm. Not a stream of equal eighth notes: aim for about 3 to 4 notes per bar on average, with long notes at phrase ends. Repeated notes are welcome; children's songs are full of them.
+- Harmony that carries the tune. Notes on beats 1 and 3 are mostly chord tones; a non-chord tone on a strong beat resolves by step. Simple, strong progressions (I, IV, V, vi, ii; in minor i, iv, V, VI, III) suit children. Never outline a diminished chord in the melody.
+- One emotional peak. The highest note of the song comes once, after the middle, on a strong beat, held at least a quarter note, reached by an expressive leap (a 4th to a 6th) and left by step. Then a satisfying way home to the tonic.
+- Shape, not exercises: no stepwise run of more than four notes in one direction, mostly comfortable intervals, a range a child can sing.
+- Original: do not quote or closely imitate an existing song (no "Happy Birthday", no "Twinkle Twinkle").
+
+How to work: in your head, choose the feel and tempo and write the chord progression first. It helps to imagine a short Chinese lyric line for each two-bar phrase and let the rhythm follow how the words are spoken. Sketch two or three different hooks for the child's notes (different rhythm, with or without a pickup), sing each through as a child in the audience would hear it, and keep the most memorable one. Then polish it and check the requirements.`;
+
+function melodyRange(motif: number[]): [number, number] {
+  const lo = Math.max(50, Math.min(Math.min(...motif), 60) - 3);
+  const hi = Math.min(84, Math.max(Math.max(...motif) + 5, lo + 17, 74));
   return [lo, hi];
 }
 
 export function buildPrompt(req: ComposeRequest): string {
   const minor = req.key.mode === 'minor';
-  const names = req.motif.map((m) => `${m} (${noteName(m, req.key.fifths, minor)})`).join(', ');
-  const total = req.bars * 16;
+  const { fifths } = req.key;
+  const k = abcKey(req.key.tonic, fifths, minor);
+  const abc = req.motif.map((m) => abcNote(m, fifths, minor)).join(' ');
+  const solf = req.motif.map((m) => solfege(m, fifths, minor)).join(' ');
   const [lo, hi] = melodyRange(req.motif);
-  return `The child played: ${names}.
-Key: ${keyLabel(req.key)} (${minor ? 'minor' : 'major'}, tonic pitch class ${req.key.tonic}). Time: 4/4. Length: exactly ${req.bars} bars.
+  const tonic = abcNote(60 + req.key.tonic, fifths, minor).replace(/[,']/g, '');
+  const phrases = req.bars / 4;
+  const feelLine = req.feel
+    ? `Feel: ${FEEL_TEXT[req.feel]} (${FEEL_BPM[req.feel].join('–')} BPM).`
+    : `Feel: your choice. Pick what suits these three notes (rising lines can be bright or brave, falling ones gentle or flowing, repeated notes playful, a minor sound flowing or mysterious)${
+        req.avoidFeel ? `, but not "${req.avoidFeel}", which the previous tune used` : ''
+      }. The feels and their tempo bands:\n${FEELS.map((f) => `- ${FEEL_TEXT[f]} (${FEEL_BPM[f].join('–')} BPM)`).join('\n')}`;
 
-Rules:
-- Time is counted in sixteenth-note steps; one bar is 16 steps, so the melody covers steps 0 to ${total}.
-- The first three notes are exactly the child's notes, in order (MIDI ${req.motif.join(', ')}), and the first starts at step 0. You choose their rhythm.
-- One note at a time, no chords and no rests: every note starts where the previous one ends, and the last note ends at step ${total}.
-- Durations are 1, 2, 3, 4, 6, 8, 12 or 16 steps, mostly 2 and 4, with longer notes at the ends of phrases. Keep a note inside its bar unless it is a deliberate tie.
-- Stay between MIDI ${lo} and ${hi}. Use the key's notes; in minor, raise the 7th degree at cadences.
-- Build ${req.bars / 4} four-bar phrases: develop the opening three notes through repetition, sequence, inversion and rhythmic variation; mostly stepwise motion, and a leap is followed by a step back; a half cadence in the middle, one clear high point about two thirds of the way through, and end on the tonic with a note of at least 8 steps.
+  return `The child played: ${abc} (solfège ${solf}).
+Key: ${keyLabel(req.key)} (ABC K:${k}). Time: 4/4. Length: exactly ${req.bars} bars in ${phrases} four-bar phrases.
+${feelLine}
 
-Also give a short song title (at most 10 Chinese characters) and one sentence (at most 40 Chinese characters) telling the audience how the melody grows from the child's three notes. Both in Traditional Chinese, friendly for children.`;
+Write the melody in ABC notation, one string per bar, with unit length L:1/8 and key signature K:${k}:
+- Pitch: C, = C3, C = C4 (middle C), c = C5, c' = C6. ^ sharp, _ flat, = natural; an accidental lasts to the end of its bar. Write the raised 7th of a minor key with its accidental.
+- Length: C = eighth, C2 = quarter, C3 = dotted quarter, C4 = half, C6 = dotted half, C8 = whole, C/ = sixteenth, C3/2 = dotted eighth. z is a rest with the same lengths. A trailing - ties a note to the next one of the same pitch, also across the barline.
+- Every bar adds up to exactly 8 eighths. One note at a time: no chords, grace notes or triplets in the melody.
+Example of the format, and of a simple shape with repetition and long notes (the start of 小蜜蜂; do not reuse it): ["G2 E2 E4", "F2 D2 D4", "C2 D2 E2 F2", "G2 G2 G4"].
+
+The app needs:
+- Bar 1 states the child's notes ${abc} first, in this order and octave, not tied together. Any rhythm; they may start after a rest, but no later than beat 3.
+- The melody stays between ${abcNote(lo, fifths, minor)} and ${abcNote(hi, fifths, minor)}.
+- The end of bar 4 is a half cadence on the dominant, and the last bar lands on the tonic ${tonic} on beat 1 (or beat 3), held at least a half note.
+- Chords: one or two per bar, as symbols like C, Am, F, G7, Dm, E7, F/A, Bb. Write the chords first, then fit the melody to them.
+
+Finally a title and one sentence for the audience, both in Traditional Chinese, warm and fun for children. The sentence paints the picture or feeling of the tune (像…), not the techniques used. Be fresh: avoid 爬樓梯, 回家, 旅行 and other clichés.`;
 }
 
 /** Calls Claude and returns a checked melody; throws if the call fails or the answer is unusable. */
 export async function composeCloud(req: ComposeRequest, apiKey: string, signal?: AbortSignal): Promise<Melody> {
-  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true, timeout: 90_000, maxRetries: 1 });
-  const response = await client.beta.messages.create(
+  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true, timeout: DEADLINE_MS, maxRetries: 1 });
+  const deadline = AbortSignal.timeout(DEADLINE_MS);
+  const stream = client.beta.messages.stream(
     {
       model: CLOUD_MODEL,
       max_tokens: 16000,
       // If the model declines, the API retries on a fallback model within the same call.
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
-      output_config: { format: { type: 'json_schema', schema: SCHEMA } },
+      // Composing well takes some thought; the answer is still back while the musician plays.
+      output_config: { effort: 'high', format: { type: 'json_schema', schema: SCHEMA } },
       system: SYSTEM,
       messages: [{ role: 'user', content: buildPrompt(req) }],
     },
-    { signal },
+    { signal: signal ? AbortSignal.any([signal, deadline]) : deadline },
   );
+  const response = await stream.finalMessage();
   if (response.stop_reason === 'refusal') throw new Error('雲端 AI 拒絕了這次請求');
   if (response.stop_reason === 'max_tokens') throw new Error('雲端 AI 的回答被截斷');
   const text = response.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
   return parseCloudMelody(text, req);
 }
 
+/** Chord spans for one bar: one chord fills it, two split it in halves, more share it evenly. */
+function barChords(symbols: unknown, bar: number, stepsPerBar: number): ChordSpan[] {
+  const list = (Array.isArray(symbols) ? symbols : [symbols]).filter((s): s is string => typeof s === 'string' && s.trim() !== '').slice(0, 4);
+  const each = list.length ? Math.max(4, Math.floor(stepsPerBar / list.length / 4) * 4) : 0;
+  return list.map((symbol, i) => ({
+    symbol: symbol.trim(),
+    start: bar * stepsPerBar + i * each,
+    dur: i === list.length - 1 ? stepsPerBar - i * each : each,
+  }));
+}
+
 export function parseCloudMelody(text: string, req: ComposeRequest): Melody {
-  const data = JSON.parse(text) as { title?: unknown; idea?: unknown; notes?: unknown };
-  const notes = Array.isArray(data.notes) ? data.notes : [];
+  const data = JSON.parse(text) as { feel?: unknown; tempo?: unknown; chords?: unknown; melody?: unknown; title?: unknown; idea?: unknown };
+  const bars = Array.isArray(data.melody) ? data.melody.filter((b): b is string => typeof b === 'string') : [];
+  if (bars.length < req.bars) throw new Error('雲端 AI 的旋律不完整');
+  const stepsPerBar = 16;
+  const { notes } = parseAbcBars(bars.slice(0, req.bars), req.key.fifths);
+  const chords = Array.isArray(data.chords)
+    ? data.chords.slice(0, req.bars).flatMap((c, b) => barChords(c, b, stepsPerBar))
+    : [];
+  const feel = FEELS.includes(data.feel as Feel) ? (data.feel as Feel) : undefined;
   const melody = validateMelody(
     {
-      notes: notes.map((n: { midi?: unknown; start?: unknown; dur?: unknown }) => ({
-        midi: Number(n.midi),
-        start: Number(n.start),
-        dur: Number(n.dur),
-      })),
+      notes: notes.flatMap((n) => (n.midi === null ? [] : [{ midi: n.midi, start: n.start, dur: n.dur }])),
       bars: req.bars,
       beatsPerBar: 4,
       key: req.key,
       engine: 'cloud',
       title: typeof data.title === 'string' ? data.title.slice(0, 20) : undefined,
       idea: typeof data.idea === 'string' ? data.idea.slice(0, 80) : undefined,
+      bpm: typeof data.tempo === 'number' ? data.tempo : undefined,
+      chords,
+      feel,
     },
     req.motif,
   );
   if (!melody) throw new Error('雲端 AI 的旋律不完整');
-  return melody;
+  return finishMelody(melody, req.feel ?? suggestFeels(req.motif, req.key)[0]);
 }

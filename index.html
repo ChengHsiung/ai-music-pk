@@ -69,7 +69,8 @@
             <option value="16">16 小節</option>
           </select>
         </label>
-        <label>AI 速度 <input id="ai-bpm" type="number" min="50" max="160" step="1" /> BPM</label>
+        <label title="AI 自己選時，會挑適合這 3 個音的曲風">曲風 <select id="ai-feel"></select></label>
+        <label title="留空時用 AI 為這首曲子選的速度">AI 速度 <input id="ai-bpm" type="number" min="50" max="160" step="1" placeholder="自動" /> BPM</label>
         <button id="btn-settings">AI 設定</button>
         <label>真人速度 <input id="bpm" type="number" min="40" max="200" step="1" placeholder="自動" /> BPM</label>
         <button id="btn-requantize">重新整理樂譜</button>

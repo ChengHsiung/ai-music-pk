@@ -1,6 +1,13 @@
 // The host's control panel: a separate small window on the laptop screen, so the projector
 // shows only the music. It is an about:blank popup driven entirely from the main window.
 
+import { FEEL_LABEL, FEELS } from '../ai/accompaniment';
+
+/** Options for the AI's character, shared by the footer and the console. */
+export function feelOptions(): string {
+  return ['<option value="auto">AI 自己選</option>', ...FEELS.map((f) => `<option value="${f}">${FEEL_LABEL[f]}</option>`)].join('');
+}
+
 export interface ConsoleButton {
   id: string;
   label: string;
@@ -23,7 +30,10 @@ export interface ConsoleView {
   next: ConsoleButton;
   buttons: ConsoleButton[];
   bars: number;
-  bpm: number;
+  /** The AI's character, or 'auto' */
+  feel: string;
+  /** The AI's tempo; an empty value follows each tune, and the placeholder says what that is */
+  aiBpm: { value: string; placeholder: string };
   /** Tempo used to tidy the musician's performance; empty means detected automatically */
   humanBpm: { value: string; detected: string; enabled: boolean };
   rounds: ConsoleRound[];
@@ -57,6 +67,8 @@ button:disabled { opacity: 0.35; cursor: default; }
 .row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 14px; font-size: 15px; }
 .row input:disabled { opacity: 0.4; }
 .row select, .row input { padding: 6px; border-radius: 6px; border: 0; width: 80px; }
+.row select.wide { width: 110px; }
+.row input[type="number"] { width: 100px; }
 h2 { font-size: 16px; margin: 18px 0 8px; color: #adb5bd; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 td { padding: 6px 4px; border-top: 1px solid rgba(255,255,255,0.12); }
@@ -65,7 +77,7 @@ td button { font-size: 13px; padding: 4px 8px; }
 .keys { font-size: 12px; color: #868e96; margin-top: 16px; }
 `;
 
-const BODY = `
+const BODY = () => `
 <h1 id="title"></h1>
 <div id="prompt" class="prompt"></div>
 <ul id="status" class="status"></ul>
@@ -75,7 +87,8 @@ const BODY = `
   <label>AI 長度 <select data-action="bars">
     <option value="8">8 小節</option><option value="12">12 小節</option><option value="16">16 小節</option>
   </select></label>
-  <label>AI 速度 <input data-action="bpm" type="number" min="50" max="160" /> BPM</label>
+  <label title="AI 自己選時，會挑適合這 3 個音的曲風">AI 曲風 <select data-action="feel" class="wide">${feelOptions()}</select></label>
+  <label title="留空時用 AI 為這首曲子選的速度">AI 速度 <input data-action="bpm" type="number" min="50" max="160" placeholder="自動" /> BPM</label>
   <label title="真人演奏結束後，速度抓錯時輸入正確的 BPM，樂譜會重新整理；清空則自動判斷">真人速度 <input data-action="human-bpm" type="number" min="40" max="200" placeholder="自動" /> BPM</label>
 </div>
 <h2>每局紀錄</h2>
@@ -114,7 +127,7 @@ export class HostConsole {
     this.cache.clear();
     const doc = w.document;
     doc.open();
-    doc.write(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>主持人控制台・真人 vs AI 音樂 PK</title><style>${STYLE}</style></head><body>${BODY}</body></html>`);
+    doc.write(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>主持人控制台・真人 vs AI 音樂 PK</title><style>${STYLE}</style></head><body>${BODY()}</body></html>`);
     doc.close();
     doc.addEventListener('click', (e) => {
       const el = (e.target as HTMLElement).closest<HTMLElement>('button[data-action]');
@@ -166,9 +179,12 @@ export class HostConsole {
             .join('')}</table><p><button data-action="clear-rounds">清除所有紀錄</button></p>`,
     );
     const bars = doc.querySelector<HTMLSelectElement>('select[data-action="bars"]')!;
+    const feel = doc.querySelector<HTMLSelectElement>('select[data-action="feel"]')!;
     const bpm = doc.querySelector<HTMLInputElement>('input[data-action="bpm"]')!;
     if (doc.activeElement !== bars) bars.value = String(view.bars);
-    if (doc.activeElement !== bpm) bpm.value = String(view.bpm);
+    if (doc.activeElement !== feel) feel.value = view.feel;
+    if (doc.activeElement !== bpm) bpm.value = view.aiBpm.value;
+    bpm.placeholder = view.aiBpm.placeholder;
     const human = doc.querySelector<HTMLInputElement>('input[data-action="human-bpm"]')!;
     if (doc.activeElement !== human) human.value = view.humanBpm.value;
     human.placeholder = view.humanBpm.detected ? `自動 ${view.humanBpm.detected}` : '自動';
