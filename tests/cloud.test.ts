@@ -30,6 +30,11 @@ describe('buildPrompt', () => {
     expect(p).toContain('Feel: your choice');
     expect(p).toContain('but not "bright"');
   });
+
+  it('asks for a new picture when earlier tunes already have titles', () => {
+    expect(buildPrompt(req)).not.toContain('Earlier tunes');
+    expect(buildPrompt({ ...req, avoidTitles: ['月光下的小貓', '跳跳糖'] })).toContain('Earlier tunes at this event were called 「月光下的小貓」「跳跳糖」');
+  });
 });
 
 describe('parseCloudMelody', () => {

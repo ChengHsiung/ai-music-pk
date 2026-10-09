@@ -79,7 +79,7 @@ describe('arrange', () => {
       const { notes, pedals } = arrange(tune, spans, feel, TOTAL);
       expect(notes.length).toBeGreaterThan(8);
       for (const n of notes) {
-        expect(n.midi).toBeGreaterThanOrEqual(n.start >= TOTAL - 16 ? 33 : 40); // the closing chord reaches lower
+        expect(n.midi).toBeGreaterThanOrEqual(n.start >= TOTAL - 16 ? 36 : 40); // the closing chord reaches lower
         expect(n.midi).toBeLessThanOrEqual(64);
         expect(n.start + n.dur).toBeLessThanOrEqual(TOTAL);
         const above = tune.filter((m) => m.start < n.start + n.dur && m.start + m.dur > n.start);

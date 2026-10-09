@@ -97,7 +97,9 @@ The app needs:
 - The end of bar 4 is a half cadence on the dominant, and the last bar lands on the tonic ${tonic} on beat 1 (or beat 3), held at least a half note.
 - Chords: one or two per bar, as symbols like C, Am, F, G7, Dm, E7, F/A, Bb. Write the chords first, then fit the melody to them.
 
-Finally a title and one sentence for the audience, both in Traditional Chinese, warm and fun for children. The sentence paints the picture or feeling of the tune (像…), not the techniques used. Be fresh: avoid 爬樓梯, 回家, 旅行 and other clichés.`;
+Finally a title and one sentence for the audience, both in Traditional Chinese, warm and fun for children. The sentence paints the picture or feeling of the tune (像…), not the techniques used. Be fresh: avoid 爬樓梯, 回家, 旅行 and other clichés.${
+    req.avoidTitles?.length ? `\nEarlier tunes at this event were called ${req.avoidTitles.map((t) => `「${t}」`).join('')}; choose a different picture.` : ''
+  }`;
 }
 
 /** Calls Claude and returns a checked melody; throws if the call fails or the answer is unusable. */

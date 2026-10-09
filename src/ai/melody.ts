@@ -43,6 +43,8 @@ export interface ComposeRequest {
   feel?: Feel;
   /** The previous tune's character, so "compose again" sounds different */
   avoidFeel?: Feel;
+  /** Titles already used at this event, so each tune gets its own picture */
+  avoidTitles?: string[];
 }
 
 /** Note ids for drawing; offset so they never collide with performance events. */

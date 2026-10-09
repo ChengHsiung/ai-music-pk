@@ -193,6 +193,8 @@ describe('offline', () => {
     const req = { motif: [60, 64, 67], key: C_MAJOR, bars: 8 };
     expect(chooseFeel({ ...req, feel: 'mysterious' })).toBe('mysterious');
     for (let seed = 0; seed < 6; seed++) expect(chooseFeel({ ...req, seed, avoidFeel: 'bright' })).not.toBe('bright');
+    const first = offline({ ...req, feel: 'march', seed: 1 }).title!;
+    expect(offline({ ...req, feel: 'march', seed: 1, avoidTitles: [first] }).title).not.toBe(first);
     expect(offline({ ...req, feel: 'march' }).pedals).toEqual([
       expect.objectContaining({ end: 128 }), // only the final chord is pedalled in a march
     ]);

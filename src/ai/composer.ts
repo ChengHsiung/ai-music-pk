@@ -64,7 +64,8 @@ export function offline(req: ComposeRequest): Melody {
   const m = finishMelody({ ...composeOffline(req), feel }, feel);
   const minor = req.key.mode === 'minor';
   const motif = req.motif.map((n) => solfege(n, req.key.fifths, minor)).join(' ');
-  const titles = OFFLINE_TITLES[feel];
+  const fresh = OFFLINE_TITLES[feel].filter((t) => !req.avoidTitles?.includes(t));
+  const titles = fresh.length ? fresh : OFFLINE_TITLES[feel];
   return {
     ...m,
     title: titles[(req.seed ?? 0) % titles.length],

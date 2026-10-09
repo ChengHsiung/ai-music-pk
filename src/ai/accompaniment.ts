@@ -135,7 +135,7 @@ export function arrange(
 
     // The final bar: one warm, held chord, opened up with the bass an octave lower.
     if (start >= lastBar || (i === chords.length - 1 && end === total && len <= stepsPerBar)) {
-      const deep = bass - 12 >= 33 ? bass - 12 : bass;
+      const deep = bass - 12 >= 36 ? bass - 12 : bass; // no lower than C2, where the piano gets muddy
       const above = voiceUpper(pcs, deep + 7, top, prevUpper);
       add(0, [...new Set([deep, ...(above.length >= 3 ? above : [bass, ...spare, ...above].filter((m) => m > deep && m <= top))])], len, 1);
       pedals.push({ start, end: total });

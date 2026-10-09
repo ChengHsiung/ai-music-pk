@@ -56,6 +56,8 @@ const state = {
     composeStarted: 0,
     /** The character of the tune "compose again" replaced, so the next one differs */
     avoidFeel: undefined as Feel | undefined,
+    /** Titles of the tunes "compose again" replaced in this round */
+    replacedTitles: [] as string[],
   },
   /** What the player is playing, and the ids sounding now (for highlighting) */
   playback: null as null | 'ai' | 'human',
@@ -292,6 +294,7 @@ function setStage(stage: Stage) {
     state.ai.melody = null;
     state.ai.seed = 1;
     state.ai.avoidFeel = undefined;
+    state.ai.replacedTitles = [];
   }
   if (stage === 'ready' || stage === 'performing') {
     state.performance = [];
@@ -397,7 +400,15 @@ function aiRequest(): ComposeRequest {
     seed: state.ai.seed,
     feel: settings.feel === 'auto' ? undefined : settings.feel,
     avoidFeel: settings.feel === 'auto' ? state.ai.avoidFeel : undefined,
+    avoidTitles: usedTitles(),
   };
+}
+
+/** Titles from earlier rounds and replaced tunes, newest last, so a new tune gets a new picture. */
+function usedTitles(): string[] | undefined {
+  const earlier = rounds.filter((r) => r.n !== state.round).flatMap((r) => (r.ai?.melody.title ? [r.ai.melody.title] : []));
+  const titles = [...new Set([...earlier, ...state.ai.replacedTitles])].slice(-8);
+  return titles.length ? titles : undefined;
 }
 
 /** Starts composing for the current motif and settings, or reuses the job already running. */
@@ -429,6 +440,7 @@ async function startAi(again = false) {
   if (again) {
     state.ai.seed++;
     state.ai.avoidFeel = state.ai.melody?.feel;
+    if (state.ai.melody?.title) state.ai.replacedTitles.push(state.ai.melody.title);
   }
   setStage('ai');
   Object.assign(state.ai, { status: 'composing', melody: null, step: 0, nowIds: [], line: -1, composeStarted: performance.now() });
