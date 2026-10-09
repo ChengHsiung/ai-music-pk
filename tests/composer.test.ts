@@ -203,6 +203,15 @@ describe('offline', () => {
     expect(m.idea).toContain('Do Mi Sol');
   });
 
+  it('sings a farewell in longer notes', () => {
+    const req = { motif: [60, 64, 67], key: C_MAJOR, bars: 8 };
+    const avg = (feel: 'farewell' | 'bright') => {
+      const ms = [1, 2, 3, 4, 5, 6, 7, 8].map((seed) => offline({ ...req, seed, feel }));
+      return sumDur(ms.flatMap((m) => m.notes)) / ms.reduce((n, m) => n + m.notes.length, 0);
+    };
+    expect(avg('farewell')).toBeGreaterThan(avg('bright') * 1.2);
+  });
+
   it('follows the host and avoids the last feel on "compose again"', () => {
     const req = { motif: [60, 64, 67], key: C_MAJOR, bars: 8 };
     expect(chooseFeel({ ...req, feel: 'mysterious' })).toBe('mysterious');

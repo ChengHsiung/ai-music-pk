@@ -63,7 +63,7 @@ export function chooseFeel(req: ComposeRequest): Feel {
 
 export function offline(req: ComposeRequest): Melody {
   const feel = chooseFeel(req);
-  const m = finishMelody({ ...composeOffline(req), feel }, feel);
+  const m = finishMelody({ ...composeOffline({ ...req, feel }), feel }, feel);
   const minor = req.key.mode === 'minor';
   const motif = req.motif.map((n) => solfege(n, req.key.fifths, minor)).join(' ');
   const fresh = OFFLINE_TITLES[feel].filter((t) => !req.avoidTitles?.includes(t));
