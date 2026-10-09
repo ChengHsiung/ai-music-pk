@@ -5,7 +5,7 @@ import { Chord, chordPitchClasses, degreeChord, parseChord } from '../music/chor
 import type { Key } from '../music/theory';
 import type { MelodyNote } from './melody';
 
-export const FEELS = ['gentle', 'flowing', 'bright', 'march', 'mysterious'] as const;
+export const FEELS = ['gentle', 'flowing', 'bright', 'march', 'mysterious', 'farewell'] as const;
 export type Feel = (typeof FEELS)[number];
 
 export const FEEL_LABEL: Record<Feel, string> = {
@@ -14,6 +14,7 @@ export const FEEL_LABEL: Record<Feel, string> = {
   bright: '輕快',
   march: '勇敢',
   mysterious: '神秘',
+  farewell: '別離',
 };
 
 export interface ChordSpan {
@@ -176,6 +177,14 @@ export function arrange(
         pedals.push({ start, end });
         break;
       }
+      case 'farewell':
+        // A slow, legato bass and chord on alternate beats, like an old goodbye song.
+        for (let k = 0; k * 4 < len; k++) {
+          const strong = k % 2 === 0;
+          add(k * 4, strong ? [k % 4 === 2 && spare.includes(fifth) ? fifth : bass] : fill, 4, strong ? 0.9 : 0.5);
+        }
+        pedals.push({ start, end });
+        break;
     }
   });
 

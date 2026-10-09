@@ -117,10 +117,10 @@ export function validateMelody(m: Melody, motif: number[]): Melody | null {
 export function suggestFeels(motif: number[], key: Key): Feel[] {
   const rise = motif[motif.length - 1] - motif[0];
   const repeated = motif.some((m, i) => i > 0 && m === motif[i - 1]);
-  if (key.mode === 'minor') return ['flowing', 'mysterious', 'gentle'];
+  if (key.mode === 'minor') return ['flowing', 'mysterious', 'farewell', 'gentle'];
   if (repeated) return ['bright', 'march', 'flowing'];
   if (rise > 0) return ['bright', 'march', 'flowing'];
-  return ['gentle', 'flowing', 'bright'];
+  return ['gentle', 'flowing', 'farewell', 'bright'];
 }
 
 export const FEEL_BPM: Record<Feel, [number, number]> = {
@@ -129,6 +129,7 @@ export const FEEL_BPM: Record<Feel, [number, number]> = {
   bright: [104, 124],
   march: [100, 116],
   mysterious: [70, 88],
+  farewell: [60, 76],
 };
 
 /**

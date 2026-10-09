@@ -24,6 +24,20 @@ describe('buildPrompt', () => {
     expect(p).toContain('between A, and d');
   });
 
+  it('lets four or five notes run on into bar 2', () => {
+    expect(buildPrompt(req)).toContain("opens with the child's 3 notes C E G");
+    expect(buildPrompt(req)).not.toContain('bar 2');
+    const p = buildPrompt({ ...req, motif: [60, 64, 67, 69, 67] });
+    expect(p).toContain("opens with the child's 5 notes C E G A G");
+    expect(p).toContain('may run on into bar 2');
+  });
+
+  it('offers the farewell feel', () => {
+    expect(buildPrompt({ ...req, feel: 'farewell' })).toContain('Feel: farewell: a tender goodbye song');
+    expect(buildPrompt(req)).toContain(`farewell: a tender goodbye song`);
+    expect(FEEL_BPM.farewell[0]).toBeLessThan(FEEL_BPM.gentle[0]);
+  });
+
   it('passes on the host\'s feel, or asks for a different one than last time', () => {
     expect(buildPrompt({ ...req, feel: 'march' })).toContain('Feel: march: brave and proud');
     const p = buildPrompt({ ...req, avoidFeel: 'bright' });

@@ -173,3 +173,38 @@ export function detectKey(notes: { midi: number; weight?: number }[]): Key {
   }
   return best;
 }
+
+const MAJOR_SCALE = [0, 2, 4, 5, 7, 9, 11];
+/** Natural minor with the raised seventh as well. */
+const MINOR_SCALE = [0, 2, 3, 5, 7, 8, 10, 11];
+
+/**
+ * The key of a child's three to five notes. Key profiles need more notes than that (they hear
+ * Mi Mi Fa Sol Sol as e minor), so keys are scored the way a teacher hears a children's tune:
+ * every note in the scale, notes of the tonic chord (Do Mi Sol, or La Do Mi in minor), the
+ * tonic at the start and above all at the end, and major keys with few sharps or flats first.
+ * A minor key also needs its minor third among the notes.
+ */
+export function motifKey(midis: number[]): Key {
+  if (midis.length === 0) return C_MAJOR;
+  let best: Key = C_MAJOR;
+  let bestScore = -Infinity;
+  for (let tonic = 0; tonic < 12; tonic++) {
+    for (const mode of ['major', 'minor'] as const) {
+      const scale = mode === 'major' ? MAJOR_SCALE : MINOR_SCALE;
+      const third = mode === 'major' ? 4 : 3;
+      const fifths = MAJOR_FIFTHS[mode === 'major' ? tonic : pitchClass(tonic + 3)];
+      const degrees = midis.map((m) => pitchClass(m - tonic));
+      const chordTone = (d: number, root: number) => (d === 0 ? root : d === third || d === 7 ? 0.5 : 0);
+      let score = -0.4 * Math.abs(fifths);
+      if (mode === 'minor') score -= degrees.includes(third) ? 1.2 : 3.2;
+      for (const d of degrees) score += !scale.includes(d) ? -3 : chordTone(d, 1.5) * (d === 0 ? 1 : 2);
+      score += chordTone(degrees[0], 1.5) + chordTone(degrees[degrees.length - 1], 1.5);
+      if (score > bestScore) {
+        bestScore = score;
+        best = { fifths, mode, tonic };
+      }
+    }
+  }
+  return best;
+}

@@ -1,4 +1,4 @@
-// Cloud composer: asks Claude to turn the child's three notes into a short song with chords.
+// Cloud composer: asks Claude to turn the child's three to five notes into a short song with chords.
 // The API key is typed in on the event computer and kept in that browser only; it is never
 // part of the code.
 //
@@ -22,6 +22,7 @@ const FEEL_TEXT: Record<Feel, string> = {
   bright: 'bright: playful and bouncy, dotted or short-short-long rhythms, light and happy',
   march: 'march: brave and proud, strong downbeats, dotted rhythms, a confident tune',
   mysterious: 'mysterious: curious and a little secret, quiet, a minor colour or one surprising turn',
+  farewell: 'farewell: a tender goodbye song, bittersweet but warm, like waving to a friend at graduation; long singing notes, gently falling phrases that sigh, a vi or a borrowed iv to colour the harmony, and a hopeful last phrase',
 };
 
 const SCHEMA = {
@@ -46,10 +47,10 @@ const SCHEMA = {
   additionalProperties: false,
 };
 
-const SYSTEM = `You are a songwriter for children's TV and Mandopop, playing the AI side of a live "human musician vs AI" contest at a family event in Taiwan. A child (5 to 10 years old) has just played three notes on a digital piano. While a human musician improvises from the same notes, you turn them into a short song: a melody with its chords. The app plays it on the same piano, with a left-hand accompaniment built from your chords, and draws it note by note on a projector. The audience then votes by raising hands.
+const SYSTEM = `You are a songwriter for children's TV and Mandopop, playing the AI side of a live "human musician vs AI" contest at a family event in Taiwan. A child (5 to 10 years old) has just played a few notes (three to five) on a digital piano. While a human musician improvises from the same notes, you turn them into a short song: a melody with its chords. The app plays it on the same piano, with a left-hand accompaniment built from your chords, and draws it note by note on a projector. The audience then votes by raising hands.
 
 What makes it good for this audience:
-- A hook. Give the child's three notes a memorable rhythm. They open the tune and come back at least twice (as they are, moved to another pitch, or with the rhythm varied, never upside down), so the audience recognises "their" notes.
+- A hook. Give the child's notes a memorable rhythm. They open the tune and come back at least twice (as they are, moved to another pitch, or with the rhythm varied, never upside down), so the audience recognises "their" notes. When the child played four or five notes, a return may use just the first three or four of them.
 - A real song form with repetition, for example a a' b a (two-bar units: statement, answer ending on the dominant, contrast with the high point, return and close) or a b a c (bars 5 to 6 bring back bars 1 to 2, then bars 7 to 8 reach the peak and close). A pattern moved up or down may appear at most twice; the third time breaks it.
 - Phrases that breathe. Each two-bar idea ends on a longer note or a short rest, and the middle of the song (the end of bar 4) has a clear breath: a long note and a rest, or a rest and a pickup into the next phrase. Leave at least two rests in the song.
 - A rhythmic identity. One signature rhythm (a dotted note, a syncopation or a pickup) that returns, and one contrasting rhythm. Not a stream of equal eighth notes: aim for about 3 to 4 notes per bar on average, with long notes at phrase ends. Repeated notes are welcome; children's songs are full of them.
@@ -77,7 +78,7 @@ export function buildPrompt(req: ComposeRequest): string {
   const phrases = req.bars / 4;
   const feelLine = req.feel
     ? `Feel: ${FEEL_TEXT[req.feel]} (${FEEL_BPM[req.feel].join('–')} BPM).`
-    : `Feel: your choice. Pick what suits these three notes (rising lines can be bright or brave, falling ones gentle or flowing, repeated notes playful, a minor sound flowing or mysterious)${
+    : `Feel: your choice. Pick what suits these notes (rising lines can be bright or brave, falling ones gentle, flowing or a farewell, repeated notes playful, a minor sound flowing, mysterious or a farewell)${
         req.avoidFeel ? `, but not "${req.avoidFeel}", which the previous tune used` : ''
       }. The feels and their tempo bands:\n${FEELS.map((f) => `- ${FEEL_TEXT[f]} (${FEEL_BPM[f].join('–')} BPM)`).join('\n')}`;
 
@@ -92,7 +93,7 @@ Write the melody in ABC notation, one string per bar, with unit length L:1/8 and
 Example of the format, and of a simple shape with repetition and long notes (the start of 小蜜蜂; do not reuse it): ["G2 E2 E4", "F2 D2 D4", "C2 D2 E2 F2", "G2 G2 G4"].
 
 The app needs:
-- Bar 1 states the child's notes ${abc} first, in this order and octave, not tied together. Any rhythm; they may start after a rest, but no later than beat 3.
+- The melody opens with the child's ${req.motif.length} notes ${abc}, in this order and octave, not tied together. Any rhythm; they may start after a rest, but no later than beat 3 of bar 1${req.motif.length > 3 ? ', and may run on into bar 2' : ''}.
 - The melody stays between ${abcNote(lo, fifths, minor)} and ${abcNote(hi, fifths, minor)}.
 - The end of bar 4 is a half cadence on the dominant, and the last bar lands on the tonic ${tonic} on beat 1 (or beat 3), held at least a half note.
 - Chords: one or two per bar, as symbols like C, Am, F, G7, Dm, E7, F/A, Bb. Write the chords first, then fit the melody to them.

@@ -49,32 +49,33 @@ export interface ConsoleHandlers {
 const STYLE = `
 * { box-sizing: border-box; }
 body { margin: 0; padding: 16px; font-family: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', system-ui, sans-serif;
-  background: #0f1b33; color: #f1f3f5; }
-h1 { margin: 0 0 4px; font-size: 22px; }
-.prompt { color: #adb5bd; min-height: 1.4em; margin-bottom: 10px; }
-.status { font-size: 13px; color: #adb5bd; margin: 0 0 12px; padding: 0; list-style: none; }
+  background: #fff7ea; color: #3d2c4e; }
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 400; color: #6741d9; }
+.prompt { color: #7b6c8c; min-height: 1.4em; margin-bottom: 10px; }
+.status { font-size: 13px; color: #7b6c8c; margin: 0 0 12px; padding: 0; list-style: none; }
 .status li { margin: 2px 0; }
 button, select, input { font: inherit; }
-button { font-size: 16px; padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.25);
-  background: rgba(255,255,255,0.1); color: #f1f3f5; cursor: pointer; }
-button:hover:not(:disabled) { background: rgba(255,255,255,0.2); }
-button:disabled { opacity: 0.35; cursor: default; }
-.next { width: 100%; font-size: 22px; font-weight: 700; padding: 18px; background: #1c7ed6; border-color: #1c7ed6; margin-bottom: 12px; }
+button { font-size: 16px; padding: 9px 16px; border-radius: 999px; border: 2px solid #ead8c6;
+  background: #fff; color: #3d2c4e; cursor: pointer; }
+button:hover:not(:disabled) { background: #fff3e4; }
+button:disabled { opacity: 0.4; cursor: default; }
+.next { width: 100%; font-size: 22px; padding: 16px; background: #ff5c8d; border-color: #ff5c8d; color: #fff; margin-bottom: 12px; box-shadow: 0 4px 0 #d6336c; }
 .buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
-.next:hover:not(:disabled) { background: #1971c2; }
-.buttons .primary { background: #e8590c; border-color: #e8590c; }
-.buttons .primary:hover:not(:disabled) { background: #d9480f; }
+.next:hover:not(:disabled) { background: #e64980; }
+.buttons .primary { background: #7c6cff; border-color: #7c6cff; color: #fff; }
+.buttons .primary:hover:not(:disabled) { background: #6741d9; }
 .row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 14px; font-size: 15px; }
 .row input:disabled { opacity: 0.4; }
-.row select, .row input { padding: 6px; border-radius: 6px; border: 0; width: 80px; }
+.row select, .row input { padding: 6px 8px; border-radius: 10px; border: 2px solid #ead8c6; background: #fff; color: #3d2c4e; width: 80px; }
 .row select.wide { width: 110px; }
 .row input[type="number"] { width: 100px; }
-h2 { font-size: 16px; margin: 18px 0 8px; color: #adb5bd; }
-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-td { padding: 6px 4px; border-top: 1px solid rgba(255,255,255,0.12); }
-td button { font-size: 13px; padding: 4px 8px; }
-.empty { color: #868e96; font-size: 14px; }
-.keys { font-size: 12px; color: #868e96; margin-top: 16px; }
+h2 { font-size: 16px; font-weight: 400; margin: 18px 0 8px; color: #7b6c8c; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; background: #fff; border-radius: 14px; }
+td { padding: 6px 6px; border-top: 1px solid #f4e6d8; }
+tr:first-child td { border-top: 0; }
+td button { font-size: 13px; padding: 4px 10px; }
+.empty { color: #9a8fa8; font-size: 14px; }
+.keys { font-size: 12px; color: #9a8fa8; margin-top: 16px; }
 `;
 
 const BODY = () => `
@@ -87,7 +88,7 @@ const BODY = () => `
   <label>AI 長度 <select data-action="bars">
     <option value="8">8 小節</option><option value="12">12 小節</option><option value="16">16 小節</option>
   </select></label>
-  <label title="AI 自己選時，會挑適合這 3 個音的曲風">AI 曲風 <select data-action="feel" class="wide">${feelOptions()}</select></label>
+  <label title="AI 自己選時，會挑適合小朋友這幾個音的曲風">AI 曲風 <select data-action="feel" class="wide">${feelOptions()}</select></label>
   <label title="留空時用 AI 為這首曲子選的速度">AI 速度 <input data-action="bpm" type="number" min="50" max="160" placeholder="自動" /> BPM</label>
   <label title="真人演奏結束後，速度抓錯時輸入正確的 BPM，樂譜會重新整理；清空則自動判斷">真人速度 <input data-action="human-bpm" type="number" min="40" max="200" placeholder="自動" /> BPM</label>
 </div>
@@ -127,7 +128,7 @@ export class HostConsole {
     this.cache.clear();
     const doc = w.document;
     doc.open();
-    doc.write(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>主持人控制台・真人 vs AI 音樂 PK</title><style>${STYLE}</style></head><body>${BODY()}</body></html>`);
+    doc.write(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>主持人控制台・可愛師父 vs 分身師父</title><style>${STYLE}</style></head><body>${BODY()}</body></html>`);
     doc.close();
     doc.addEventListener('click', (e) => {
       const el = (e.target as HTMLElement).closest<HTMLElement>('button[data-action]');
@@ -169,7 +170,7 @@ export class HostConsole {
     set(
       'rounds',
       view.rounds.length === 0
-        ? '<div class="empty">還沒有紀錄。小朋友彈完 3 個音後會自動記錄。</div>'
+        ? '<div class="empty">還沒有紀錄。小朋友出完題後會自動記錄。</div>'
         : `<table>${view.rounds
             .map(
               (r) => `<tr><td>第 ${r.n} 局</td><td>${esc(r.motif)}</td>

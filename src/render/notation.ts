@@ -21,12 +21,17 @@ import { QuantizedScore, SPLIT_MIDI, StaffName, Tick } from '../music/quantize';
 import { signatureAlters, spell, solfege, vexKey, vexKeySignature } from '../music/theory';
 
 export const COLORS = {
-  ink: '#111111',
-  motif: '#e8590c',
-  current: '#1c7ed6',
-  accompaniment: '#868e96',
-  label: '#495057',
+  ink: '#1f1830',
+  /** The child's notes */
+  motif: '#f76707',
+  /** The note just played in the live view: the musician (可愛師父) is playing */
+  current: '#e64980',
+  accompaniment: '#9a93a8',
+  label: '#5f5470',
 };
+
+/** Solfège labels use the page's rounded font when it has loaded. */
+const LABEL_FONT = 'Huninn, Arial';
 
 const VEX_DURATION: Record<number, string> = {
   16: 'w', 12: 'h', 8: 'h', 6: 'q', 4: 'q', 3: '8', 2: '8', 1: '16',
@@ -97,7 +102,7 @@ function chordNote(
   if (opts.showSolfege && !isContinuation) {
     const top = midis[midis.length - 1];
     const label = new Annotation(solfege(top, opts.fifths, opts.minor))
-      .setFont('Arial', staff === 'treble' ? 15 : 14, 'bold')
+      .setFont(LABEL_FONT, staff === 'treble' ? 16 : 15)
       .setVerticalJustification(Annotation.VerticalJustify.BOTTOM);
     label.setStyle({ fillStyle: COLORS.label });
     note.addModifier(label, midis.length - 1);
@@ -200,12 +205,22 @@ export interface ScoreOptions extends DrawOptions {
   width?: number;
 }
 
-/** Lets a drawn score appear note by note while it is played. */
+/** Lets a drawn score appear note by note while it is played, and follow the playing. */
 export interface ScoreView {
   /** Shows everything that starts before `step` (sixteenths); Infinity shows the whole score. */
   reveal(step: number): void;
-  /** Marks the notes of these event ids as sounding now; returns the first one for scrolling. */
-  highlight(ids: number[]): Element | null;
+  /** Marks the notes of these event ids as sounding now; returns the first one. */
+  highlight(ids: number[]): SVGElement | null;
+  /**
+   * Scrolls `scroller` (an ancestor that scrolls) so the line holding `step` is at the top,
+   * once each time the playing moves to another line.
+   */
+  follow(step: number, scroller: HTMLElement): void;
+}
+
+/** The sixteenth-note step a drawn note starts on, as tagged by renderScore. */
+export function stepOf(node: Element | null): number {
+  return Number((node as SVGElement | null)?.dataset.step ?? NaN);
 }
 
 interface Mark {
@@ -235,7 +250,7 @@ export function renderScore(el: HTMLElement, score: QuantizedScore, opts: ScoreO
   const pendingTie: Record<StaffName, { note: StaveNote; line: number } | null> = { treble: null, bass: null };
   const ties: StaveTie[] = [];
   const marks: Mark[] = [];
-  const stepOf = new Map<StaveNote, number>();
+  const noteStep = new Map<StaveNote, number>();
 
   score.bars.forEach((bar, b) => {
     const line = Math.floor(b / barsPerLine);
@@ -270,7 +285,7 @@ export function renderScore(el: HTMLElement, score: QuantizedScore, opts: ScoreO
       let step = b * stepsPerBar;
       bar[staff].forEach((t, i) => {
         const note = notes[i];
-        stepOf.set(note, step);
+        noteStep.set(note, step);
         marks.push({ element: note, step, ids: t.ids });
         const prev = pendingTie[staff];
         if (t.tiedFromPrev && prev) {
@@ -308,7 +323,7 @@ export function renderScore(el: HTMLElement, score: QuantizedScore, opts: ScoreO
     beams.forEach((beam) => {
       beam.setContext(ctx).drawWithStyle();
       // A beam appears with its first note.
-      const step = Math.min(...beam.getNotes().map((n) => stepOf.get(n as StaveNote) ?? 0));
+      const step = Math.min(...beam.getNotes().map((n) => noteStep.get(n as StaveNote) ?? 0));
       marks.push({ element: beam, step, ids: [] });
     });
   });
@@ -325,18 +340,30 @@ export function renderScore(el: HTMLElement, score: QuantizedScore, opts: ScoreO
     tagged.push(node);
   }
 
+  let shownLine = -1;
   return {
     reveal(step: number) {
       for (const node of tagged) node.classList.toggle('pending', Number(node.dataset.step) >= step);
     },
     highlight(ids: number[]) {
-      let first: Element | null = null;
+      let first: SVGElement | null = null;
       for (const node of tagged) {
         const on = !!node.dataset.ids && node.dataset.ids.split(' ').some((id) => ids.includes(Number(id)));
         node.classList.toggle('now', on);
         if (on && !first) first = node;
       }
       return first;
+    },
+    follow(step: number, scroller: HTMLElement) {
+      if (!Number.isFinite(step)) return;
+      const line = Math.min(lines - 1, Math.floor(Math.max(0, step) / stepsPerBar / barsPerLine));
+      const svg = el.querySelector('svg');
+      if (line === shownLine || !svg) return;
+      shownLine = line;
+      const scale = svg.getBoundingClientRect().width / pageWidth;
+      const top = scroller.scrollTop + el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + line * lineHeight * scale;
+      const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      scroller.scrollTo({ top: Math.max(0, top - 6), behavior: smooth ? 'smooth' : 'auto' });
     },
   };
 }

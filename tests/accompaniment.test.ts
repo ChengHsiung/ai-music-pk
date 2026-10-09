@@ -97,6 +97,22 @@ describe('arrange', () => {
     });
   }
 
+  it('plays a farewell as a slow bass and chord on alternate beats, held by the pedal', () => {
+    const { notes, pedals } = arrange(tune, spans, 'farewell', TOTAL);
+    const onsets = new Map<number, number[]>();
+    for (const n of notes.filter((x) => x.start < TOTAL - 16)) {
+      onsets.set(n.start, [...(onsets.get(n.start) ?? []), n.midi]);
+      expect(n.dur).toBeLessThanOrEqual(4);
+    }
+    for (const [at, midis] of onsets) {
+      const beat = (at % 16) / 4;
+      expect(Number.isInteger(beat)).toBe(true);
+      if (beat % 2 === 0) expect(midis).toHaveLength(1); // the bass, or its fifth on beat 3
+      else expect(midis.length).toBeGreaterThanOrEqual(2); // the chord
+    }
+    expect(pedals.length).toBeGreaterThan(5);
+  });
+
   it('skips chords it cannot read', () => {
     const { notes } = arrange(tune, [{ start: 0, dur: 64, symbol: '??' }, { start: 64, dur: 64, symbol: 'C' }], 'gentle', TOTAL);
     expect(notes.every((n) => n.start >= 64)).toBe(true);
