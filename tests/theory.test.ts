@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectKey, keyLabel, noteName, solfege, spell, vexKey } from '../src/music/theory';
+import { detectKey, keyLabel, motifKey, noteName, solfege, spell, vexKey } from '../src/music/theory';
 
 describe('spell', () => {
   it('spells naturals in C major', () => {
@@ -63,5 +63,34 @@ describe('detectKey', () => {
 
   it('reads an F major scale as F major', () => {
     expect(detectKey(notes([65, 67, 69, 70, 72, 74, 76, 77])).fifths).toBe(-1);
+  });
+});
+
+describe('motifKey', () => {
+  const key = (ms: number[]) => keyLabel(motifKey(ms));
+
+  it('hears familiar children\'s openings in the key a teacher would', () => {
+    expect(key([64, 64, 65, 67, 67])).toBe('C 大調'); // Mi Mi Fa Sol Sol
+    expect(key([64, 62, 60, 62, 64])).toBe('C 大調'); // Mi Re Do Re Mi
+    expect(key([60, 60, 67, 67, 69])).toBe('C 大調'); // Do Do Sol Sol La
+    expect(key([67, 67, 69, 67, 72])).toBe('C 大調'); // Sol Sol La Sol Do
+    expect(key([62, 62, 64, 62, 67])).toBe('G 大調'); // Re Re Mi Re Sol
+  });
+
+  it('reads three notes like before', () => {
+    expect(key([60, 64, 67])).toBe('C 大調');
+    expect(key([67, 71, 74])).toBe('G 大調');
+    expect(key([64, 62, 60])).toBe('C 大調');
+    expect(key([64, 65, 67])).toBe('C 大調');
+    expect(key([62, 64, 66])).toBe('D 大調');
+    expect(key([65, 69, 72])).toBe('F 大調');
+  });
+
+  it('chooses minor only when the minor third is there', () => {
+    expect(key([69, 72, 76])).toBe('a 小調'); // La Do Mi
+    expect(key([69, 71, 72, 71, 69])).toBe('a 小調');
+    expect(key([62, 65, 69])).toBe('d 小調');
+    expect(key([60, 62, 63])).toBe('c 小調');
+    expect(motifKey([64, 62, 60, 62]).mode).toBe('major'); // no G, so not e minor
   });
 });

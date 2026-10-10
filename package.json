@@ -1,7 +1,7 @@
 {
   "name": "ai-music-pk",
   "version": "0.1.0",
-  "description": "真人 vs AI 音樂 PK：小朋友彈 3 個音，真人與 AI 各自續寫旋律",
+  "description": "可愛師父 vs 分身師父音樂 PK：小朋友彈 3 到 5 個音，真人與 AI 各自續寫旋律",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",

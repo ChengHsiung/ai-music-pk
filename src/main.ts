@@ -9,9 +9,10 @@ import { MidiIO, MidiStatus } from './io/midi';
 import { VirtualKeyboard } from './io/virtualKeyboard';
 import { MidiFileControl, PPQ, writeMidiFile } from './music/midiFile';
 import { clusterOnsets, NoteEvent, quantize, QuantizedScore } from './music/quantize';
-import { C_MAJOR, detectKey, Key, keyLabel, noteName, pitchClass, solfege } from './music/theory';
-import { LiveGroup, renderLive, renderScore, ScoreView } from './render/notation';
+import { C_MAJOR, Key, keyLabel, motifKey, noteName, pitchClass, solfege } from './music/theory';
+import { LiveGroup, renderLive, renderScore, ScoreView, stepOf } from './render/notation';
 import { ConsoleButton, feelOptions, HostConsole } from './ui/hostConsole';
+import { mountMascots } from './ui/mascots';
 
 type Stage = 'title' | 'free' | 'motif' | 'ready' | 'performing' | 'review' | 'ai' | 'compare';
 type AiStatus = 'composing' | 'playing' | 'paused' | 'done';
@@ -19,15 +20,21 @@ type AiStatus = 'composing' | 'playing' | 'paused' | 'done';
 const STAGE_TEXT: Record<Stage, { label: string; prompt: string }> = {
   title: { label: '開場', prompt: '' },
   free: { label: '自由彈奏', prompt: '彈任何音，五線譜會即時顯示' },
-  motif: { label: '小朋友出題', prompt: '請小朋友彈 3 個音' },
-  ready: { label: '動機完成', prompt: '音樂家準備好就開始彈，第一個音會自動開始記錄' },
-  performing: { label: '真人音樂家演奏中', prompt: '' },
-  review: { label: '真人音樂家的作品', prompt: '' },
-  ai: { label: 'AI 創作', prompt: '' },
+  motif: { label: '小朋友出題', prompt: '請小朋友彈 3 到 5 個音' },
+  ready: { label: '出題完成', prompt: '可愛師父準備好就開始彈，第一個音會自動開始記錄' },
+  performing: { label: '可愛師父演奏中', prompt: '' },
+  review: { label: '可愛師父的作品', prompt: '' },
+  ai: { label: '分身師父創作', prompt: '' },
   compare: { label: '請大家投票', prompt: '你比較喜歡哪一首？請舉手！' },
 };
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+
+/** The child plays three to five notes. */
+const MOTIF_MIN = 3;
+const MOTIF_MAX = 5;
+/** After the third note, a pause this long ends the motif (the fifth note ends it at once). */
+const MOTIF_PAUSE_MS = 2500;
 
 const state = {
   stage: 'title' as Stage,
@@ -51,7 +58,6 @@ const state = {
     step: Infinity,
     /** Event ids sounding now */
     nowIds: [] as number[],
-    line: -1,
     seed: 1,
     composeStarted: 0,
     /** The character of the tune "compose again" replaced, so the next one differs */
@@ -143,7 +149,7 @@ function storeRounds() {
 
 /** Writes what this round has so far: the motif, the musician's performance and the AI melody. */
 function saveRound() {
-  if (state.motif.length < 3) return;
+  if (state.motif.length < MOTIF_MIN) return;
   let r = rounds.find((x) => x.n === state.round);
   if (!r) {
     r = { n: state.round, at: new Date().toISOString(), motif: [], key: state.motifKey, human: null, ai: null };
@@ -257,38 +263,59 @@ function noteOff(midi: number, _velocity: number, time: number) {
   state.dirty = true;
 }
 
-/** Takes one note per onset: if a child presses several keys at once, the highest counts. */
+let motifTimer = 0;
+
+/**
+ * Takes one note per onset: if a child presses several keys at once, the highest counts.
+ * From the third note on, the motif is done after a short pause, or at once with the fifth.
+ */
 function captureMotif(ev: NoteEvent) {
   const last = state.motif.at(-1);
   if (last && ev.start - last.start < 60) {
     if (ev.midi > last.midi) state.motif[state.motif.length - 1] = ev;
     flash('請一次彈一個音');
-  } else if (state.motif.length < 3) {
+  } else if (state.motif.length < MOTIF_MAX) {
     state.motif.push(ev);
   }
-  if (state.motif.length === 3) {
-    state.motifKey = detectKey(state.motif);
-    setTimeout(() => {
-      if (state.stage !== 'motif' || state.motif.length !== 3) return;
-      setStage('ready');
-      saveRound();
-      // The AI starts composing now, while the musician plays, so nobody waits for it later.
-      ensureJob();
-    }, 400);
+  clearTimeout(motifTimer);
+  if (state.motif.length >= MOTIF_MIN) {
+    const wait = state.motif.length === MOTIF_MAX ? 400 : MOTIF_PAUSE_MS;
+    motifTimer = window.setTimeout(finishMotif, wait);
+    motifWait(wait);
   }
+  updateChrome();
+}
+
+/** The motif is complete: work out its key, and the AI starts composing while the musician plays. */
+function finishMotif() {
+  clearTimeout(motifTimer);
+  if (state.stage !== 'motif' || state.motif.length < MOTIF_MIN) return;
+  state.motifKey = motifKey(state.motif.map((e) => e.midi));
+  setStage('ready');
+  saveRound();
+  ensureJob();
+}
+
+/** The motif is complete and the round can go on. */
+function motifDone(): boolean {
+  return state.stage !== 'motif' && state.motif.length >= MOTIF_MIN;
 }
 
 // ---------------------------------------------------------------- stages
 
 function setStage(stage: Stage) {
   stopPlayback();
+  clearTimeout(motifTimer);
+  motifWait(0);
   if (state.stage === 'ai' && stage !== 'ai') aiToken++; // drop a pending "show the tune"
   const previous = state.stage;
   state.stage = stage;
+  if (stage !== previous) scrollSheetsToTop();
   if (stage === 'motif') {
     job?.controller.abort(); // a new motif needs a new tune
     job = null;
     state.motif = [];
+    state.motifKey = C_MAJOR; // the new notes are named in C until they are complete
     state.performance = [];
     state.score = null;
     state.ai.melody = null;
@@ -302,7 +329,7 @@ function setStage(stage: Stage) {
     // A pedal pressed while waiting for the first note belongs to the performance.
     if (stage === 'ready' || previous !== 'ready') state.pedalEvents = [];
   }
-  if (stage === 'ready' && state.motif.length === 3) saveRound();
+  if (stage === 'ready' && state.motif.length >= MOTIF_MIN) saveRound();
   if (stage === 'review') finishPerformance();
   if (stage === 'compare') prepareCompare();
   state.dirty = true;
@@ -338,9 +365,10 @@ function finishPerformance() {
 /** Ids of the opening performance notes that repeat the motif, for colouring. */
 function motifIds(): Set<number> {
   const ids = new Set(state.motif.map((e) => e.id));
-  if (state.motif.length === 3 && state.performance.length > 0) {
-    const firsts = clusterOnsets(state.performance).slice(0, 3).map((c) => c.reduce((a, b) => (b.midi > a.midi ? b : a)));
-    const match = firsts.length === 3 && firsts.every((e, i) => pitchClass(e.midi) === pitchClass(state.motif[i].midi));
+  const n = state.motif.length;
+  if (n >= MOTIF_MIN && state.performance.length > 0) {
+    const firsts = clusterOnsets(state.performance).slice(0, n).map((c) => c.reduce((a, b) => (b.midi > a.midi ? b : a)));
+    const match = firsts.length === n && firsts.every((e, i) => pitchClass(e.midi) === pitchClass(state.motif[i].midi));
     if (match) firsts.forEach((e) => ids.add(e.id));
   }
   return ids;
@@ -353,7 +381,7 @@ function liveGroups(events: NoteEvent[]): LiveGroup[] {
 const NEXT_LABEL: Record<Stage, () => string> = {
   title: () => `開始第 ${state.round} 局：小朋友出題`,
   free: () => `開始第 ${state.round} 局：小朋友出題`,
-  motif: () => `等小朋友彈完 3 個音（還差 ${3 - state.motif.length} 個）`,
+  motif: () => (state.motif.length < MOTIF_MIN ? `等小朋友彈 3 到 5 個音（還差 ${MOTIF_MIN - state.motif.length} 個）` : '小朋友彈好了'),
   ready: () => '開始記錄真人演奏',
   performing: () => '結束真人演奏',
   review: () => '換 AI 創作',
@@ -368,7 +396,7 @@ function nextStep() {
     case 'compare':
       return startMotif();
     case 'motif':
-      return flash(`還差 ${3 - state.motif.length} 個音`);
+      return state.motif.length < MOTIF_MIN ? flash(`還差 ${MOTIF_MIN - state.motif.length} 個音`) : finishMotif();
     case 'ready':
       return setStage('performing');
     case 'performing':
@@ -433,8 +461,8 @@ function ensureJob() {
 }
 
 async function startAi(again = false) {
-  if (state.motif.length < 3) {
-    flash('請先讓小朋友彈 3 個音');
+  if (!motifDone()) {
+    flash('請先讓小朋友出題');
     return;
   }
   if (again) {
@@ -443,7 +471,7 @@ async function startAi(again = false) {
     if (state.ai.melody?.title) state.ai.replacedTitles.push(state.ai.melody.title);
   }
   setStage('ai');
-  Object.assign(state.ai, { status: 'composing', melody: null, step: 0, nowIds: [], line: -1, composeStarted: performance.now() });
+  Object.assign(state.ai, { status: 'composing', melody: null, step: 0, nowIds: [], composeStarted: performance.now() });
   updateChrome();
   const token = ++aiToken;
   const current = ensureJob();
@@ -484,7 +512,7 @@ function playAi(delayMs = 300) {
   const m = state.ai.melody;
   if (!m) return;
   stopPlayback();
-  Object.assign(state.ai, { status: 'playing', step: 0, nowIds: [], line: -1 });
+  Object.assign(state.ai, { status: 'playing', step: 0, nowIds: [] });
   state.playback = 'ai';
   state.dirty = true;
   updateChrome();
@@ -525,27 +553,27 @@ function vkLight(midi: number | null) {
   vkLit = midi;
 }
 
-/** Shows the AI score up to the note now playing and scrolls its line into view. */
+/** Shows the AI score up to the note now playing and keeps its line in view. */
 function applyAiView(scroll: boolean) {
   if (!aiView) return;
   aiView.reveal(state.ai.step);
   aiView.highlight(state.ai.nowIds);
-  const m = state.ai.melody;
-  if (!scroll || !m || !Number.isFinite(state.ai.step)) return;
-  const line = Math.floor(Math.max(0, state.ai.step - 1) / (m.beatsPerBar * 4) / 4);
-  if (line === state.ai.line) return;
-  state.ai.line = line;
-  const svg = $('score').querySelector('svg');
-  if (!svg) return;
-  const scale = svg.clientWidth / 1200;
-  const sheet = $('score').parentElement!;
-  sheet.scrollTo({ top: Math.max(0, $('score').offsetTop + line * 290 * scale - 12), behavior: 'smooth' });
+  if (scroll) aiView.follow(state.ai.step - 1, $('sheet-body'));
 }
 
+/** Colours the notes being replayed side by side, and scrolls each column along with its music. */
 function applyViews(scroll: boolean) {
   applyAiView(scroll);
-  cmpViews.human?.highlight(state.playback === 'human' ? state.playIds : []);
-  cmpViews.ai?.highlight(state.playback === 'ai' ? state.playIds : []);
+  const human = cmpViews.human?.highlight(state.playback === 'human' ? state.playIds : []) ?? null;
+  const ai = cmpViews.ai?.highlight(state.playback === 'ai' ? state.playIds : []) ?? null;
+  if (!scroll) return;
+  if (human) cmpViews.human!.follow(stepOf(human), $('cmp-human-scroll'));
+  if (ai) cmpViews.ai!.follow(stepOf(ai), $('cmp-ai-scroll'));
+}
+
+/** A new screen starts at the top of its music. */
+function scrollSheetsToTop() {
+  for (const id of ['sheet-body', 'cmp-human-scroll', 'cmp-ai-scroll']) $(id).scrollTop = 0;
 }
 
 const player = new Player({
@@ -587,9 +615,15 @@ const cmpViews: { human: ScoreView | null; ai: ScoreView | null } = { human: nul
 /** Half-width columns draw on a narrower page so the notes stay large. */
 const COMPARE_WIDTH = 1000;
 
+/** Fewer bars on each line of a column when the bars are busy, so the note names do not run together. */
+function compareBarsPerLine(score: QuantizedScore): number {
+  const busiest = Math.max(0, ...score.bars.map((bar) => bar.treble.filter((t) => !t.rest).length));
+  return busiest > 10 ? 2 : busiest > 6 ? 3 : 4;
+}
+
 /** The AI may still be composing when the host skips ahead; show its tune once it is ready. */
 function prepareCompare() {
-  if (state.ai.melody || state.motif.length < 3) return;
+  if (state.ai.melody || !motifDone()) return;
   const current = ensureJob();
   const token = aiToken;
   current.promise.then(
@@ -637,16 +671,29 @@ function draw() {
 
 function drawMotif() {
   const slots = $('motif-notes').children;
+  const done = motifDone();
   const { fifths, mode } = state.motifKey;
   const minor = mode === 'minor';
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < MOTIF_MAX; i++) {
     const slot = slots[i] as HTMLElement;
     const ev = state.motif[i];
     slot.classList.toggle('filled', !!ev);
-    slot.querySelector('.syl')!.textContent = ev ? solfege(ev.midi, fifths, minor) : '?';
+    // The optional fourth and fifth notes disappear once the child stopped at three or four.
+    slot.classList.toggle('unused', !ev && i >= MOTIF_MIN && done);
+    slot.querySelector('.syl')!.textContent = ev ? solfege(ev.midi, fifths, minor) : i < MOTIF_MIN ? '?' : '+';
     slot.querySelector('.name')!.textContent = ev ? noteName(ev.midi, fifths, minor) : '';
   }
-  $('key-label').textContent = state.motif.length === 3 ? `建議調性：${keyLabel(state.motifKey)}` : '';
+  $('key-label').textContent = done ? `建議調性：${keyLabel(state.motifKey)}` : '';
+}
+
+/** Shows the pause that will end the motif as a shrinking bar; 0 hides it. */
+function motifWait(ms: number) {
+  const el = $('motif-wait');
+  el.classList.remove('run');
+  if (ms <= 0) return;
+  void el.offsetWidth; // restart the animation
+  el.style.setProperty('--wait', `${ms}ms`);
+  el.classList.add('run');
 }
 
 function scoreMeta(score: QuantizedScore) {
@@ -677,16 +724,23 @@ function drawSheet() {
 
   if (state.stage === 'compare') {
     if (state.score) {
-      cmpViews.human = renderScore($('cmp-human'), state.score, { ...common, fifths: state.score.key.fifths, width: COMPARE_WIDTH });
+      cmpViews.human = renderScore($('cmp-human'), state.score, {
+        ...common,
+        fifths: state.score.key.fifths,
+        width: COMPARE_WIDTH,
+        barsPerLine: compareBarsPerLine(state.score),
+      });
       $('cmp-human-meta').textContent = scoreMeta(state.score);
     } else {
-      $('cmp-human').innerHTML = '<p class="placeholder">（這一局沒有真人演奏）</p>';
+      $('cmp-human').innerHTML = '<p class="placeholder">（這一局可愛師父沒有演奏）</p>';
       $('cmp-human-meta').textContent = '';
     }
     const m = state.ai.melody;
     if (m) {
-      cmpViews.ai = renderScore($('cmp-ai'), scoreFromMelody(m, aiBpm(m)), {
+      const aiScore = scoreFromMelody(m, aiBpm(m));
+      cmpViews.ai = renderScore($('cmp-ai'), aiScore, {
         ...common,
+        barsPerLine: compareBarsPerLine(aiScore),
         motifIds: aiMotif,
         accompaniment: isAiLeft,
         fifths: m.key.fifths,
@@ -694,7 +748,7 @@ function drawSheet() {
       });
       $('cmp-ai-meta').textContent = `${m.title ? `《${m.title}》・` : ''}${aiMeta(m)}`;
     } else {
-      $('cmp-ai').innerHTML = `<p class="placeholder">${state.motif.length === 3 ? 'AI 還在創作…' : '（這一局還沒有 AI 作品）'}</p>`;
+      $('cmp-ai').innerHTML = `<p class="placeholder">${motifDone() ? '分身師父還在創作…' : '（這一局還沒有分身師父的作品）'}</p>`;
       $('cmp-ai-meta').textContent = '';
     }
     applyViews(false);
@@ -717,13 +771,14 @@ function drawSheet() {
     return;
   }
 
+  // The opening screen shows only the title card, with nothing to scroll to below it.
+  if (state.stage === 'title') return;
   live.hidden = false;
-  const keyless = state.stage === 'free' || state.stage === 'title';
+  const keyless = state.stage === 'free';
   const fifths = keyless ? 0 : state.motifKey.fifths;
   const minor = !keyless && state.motifKey.mode === 'minor';
   const events =
-    state.stage === 'title' ? []
-    : state.stage === 'free' ? state.freeEvents
+    state.stage === 'free' ? state.freeEvents
     : state.stage === 'performing' || state.stage === 'review' ? state.performance
     : state.motif;
   renderLive(live, liveGroups(events), { ...common, fifths, minor });
@@ -754,7 +809,7 @@ interface Action {
 
 const ACTIONS: Action[] = [
   { id: 'motif', label: () => '① 小朋友出題', key: 'Digit1', stages: ['title', 'free', 'compare', 'review', 'ai'], run: startMotif },
-  { id: 'retake', label: () => '重彈 3 個音', stages: ['motif', 'ready'], run: () => setStage('motif') },
+  { id: 'retake', label: () => '重新出題', stages: ['motif', 'ready'], run: () => setStage('motif') },
   { id: 'start', label: () => '② 開始演奏', key: 'Digit2', stages: ['ready'], run: () => setStage('performing') },
   { id: 'stop', label: () => '③ 結束演奏', key: 'Digit3', stages: ['performing'], run: () => setStage('review') },
   { id: 'human-redo', label: () => '真人重來', stages: ['performing', 'review'], run: () => setStage('ready') },
@@ -763,7 +818,7 @@ const ACTIONS: Action[] = [
     label: () => '④ AI 創作',
     key: 'Digit4',
     stages: ['ready', 'performing', 'review', 'compare'],
-    enabled: () => state.motif.length === 3,
+    enabled: motifDone,
     primary: true,
     run: () => startAi(),
   },
@@ -806,7 +861,7 @@ const NEXT: Action = {
   id: 'next',
   label: () => `下一步：${NEXT_LABEL[state.stage]()}`,
   key: 'ArrowRight',
-  enabled: () => state.stage !== 'motif',
+  enabled: () => state.stage !== 'motif' || state.motif.length >= MOTIF_MIN,
   run: nextStep,
 };
 
@@ -863,10 +918,10 @@ function onHostKey(e: KeyboardEvent) {
 // ---------------------------------------------------------------- chrome
 
 const AI_LABEL: Record<AiStatus, string> = {
-  composing: 'AI 創作中',
-  playing: 'AI 演奏中',
-  paused: 'AI 暫停',
-  done: 'AI 的作品',
+  composing: '分身師父創作中',
+  playing: '分身師父演奏中',
+  paused: '分身師父暫停',
+  done: '分身師父的作品',
 };
 
 function stageLabel() {
@@ -874,11 +929,16 @@ function stageLabel() {
 }
 
 function promptText(): string {
+  if (state.stage === 'motif') {
+    const n = state.motif.length;
+    if (n >= MOTIF_MAX) return '好棒！出題完成';
+    if (n >= MOTIF_MIN) return `好棒！還可以再彈 ${MOTIF_MAX - n} 個音，或等一下就完成`;
+  }
   if (state.stage !== 'ai') return STAGE_TEXT[state.stage].prompt;
   const { status, melody, composeStarted } = state.ai;
   if (status === 'composing') {
     const secs = Math.floor((performance.now() - composeStarted) / 1000);
-    return `AI 正在用這 3 個音創作${secs >= 3 ? `（${secs} 秒）` : ''}`;
+    return `分身師父正在用這 ${state.motif.length} 個音創作${secs >= 3 ? `（${secs} 秒）` : ''}`;
   }
   return melody?.title ? `《${melody.title}》` : '';
 }
@@ -903,6 +963,7 @@ function updateChrome() {
   $('prompt').classList.toggle('thinking', state.stage === 'ai' && state.ai.status === 'composing');
   $('idea').textContent = state.stage === 'ai' ? (state.ai.melody?.idea ?? '') : '';
   document.body.dataset.stage = state.stage;
+  document.body.dataset.who = ['ready', 'performing', 'review'].includes(state.stage) ? 'master' : state.stage === 'ai' ? 'clone' : '';
   $<HTMLButtonElement>('btn-requantize').disabled = state.stage !== 'review';
   $<HTMLInputElement>('ai-bpm').placeholder = aiBpmPlaceholder();
 
@@ -960,6 +1021,7 @@ const midiOut = new MidiOutput(midi);
 const speaker = new PianoOutput(new SpeakerOutput());
 speaker.load();
 const vk = new VirtualKeyboard($('vk'), noteOn, noteOff);
+mountMascots(document);
 const hostConsole = new HostConsole({
   action: runAction,
   key: onHostKey,

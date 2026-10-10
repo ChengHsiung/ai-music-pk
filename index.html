@@ -3,53 +3,72 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>真人 vs AI 音樂 PK</title>
+    <title>可愛師父 vs 分身師父 音樂 PK</title>
   </head>
   <body data-stage="title">
     <header class="topbar">
-      <h1>真人 <span class="vs">vs</span> AI 音樂 PK</h1>
+      <h1 class="versus-title">
+        <span class="mascot" data-mascot="master"></span>
+        <span class="name master">可愛師父</span>
+        <span class="vs">VS</span>
+        <span class="name clone">分身師父</span>
+        <span class="mascot" data-mascot="clone"></span>
+      </h1>
       <div id="round-label" class="round-label"></div>
       <div id="stage-label" class="stage-label"></div>
       <div id="midi-status" class="midi-status">正在尋找鍵盤…</div>
     </header>
 
     <main class="stage">
-      <section class="motif" aria-label="本局動機">
-        <div class="motif-title">本局動機</div>
+      <section class="motif" aria-label="小朋友的音">
+        <div class="motif-title">小朋友的音</div>
         <div id="motif-notes" class="motif-notes">
           <div class="slot"><div class="syl">?</div><div class="name"></div></div>
           <div class="slot"><div class="syl">?</div><div class="name"></div></div>
           <div class="slot"><div class="syl">?</div><div class="name"></div></div>
+          <div class="slot optional"><div class="syl">+</div><div class="name"></div></div>
+          <div class="slot optional"><div class="syl">+</div><div class="name"></div></div>
         </div>
-        <div id="key-label" class="key-label"></div>
+        <div class="motif-side">
+          <div id="key-label" class="key-label"></div>
+          <div id="motif-wait" class="motif-wait" aria-hidden="true"><span></span></div>
+        </div>
       </section>
 
       <section class="sheet">
-        <div id="title-card" class="title-card">
-          <div class="big">真人 <span class="vs">vs</span> AI</div>
-          <div class="sub">音樂創作 PK</div>
-          <ol class="steps">
-            <li>小朋友彈 3 個音</li>
-            <li>真人音樂家用這 3 個音創作</li>
-            <li>AI 也用這 3 個音創作</li>
-            <li>大家舉手投票！</li>
-          </ol>
+        <div class="sheet-head">
+          <div id="prompt" class="prompt"></div>
+          <div id="idea" class="idea"></div>
+          <div id="score-meta" class="score-meta"></div>
         </div>
-        <div id="prompt" class="prompt"></div>
-        <div id="idea" class="idea"></div>
-        <div id="score-meta" class="score-meta"></div>
-        <div id="live" class="notation"></div>
-        <div id="score" class="notation" hidden></div>
-        <div id="compare" class="compare" hidden>
-          <div class="col human">
-            <h2>真人音樂家</h2>
-            <div id="cmp-human-meta" class="col-meta"></div>
-            <div id="cmp-human" class="notation"></div>
+        <div id="sheet-body" class="sheet-body">
+          <div id="title-card" class="title-card">
+            <div class="heroes">
+              <figure class="hero master"><span class="mascot" data-mascot="master"></span><figcaption>可愛師父</figcaption></figure>
+              <div class="vs-badge">VS</div>
+              <figure class="hero clone"><span class="mascot" data-mascot="clone"></span><figcaption>分身師父</figcaption></figure>
+            </div>
+            <div class="sub">音樂創作大對決</div>
+            <ol class="steps">
+              <li>小朋友彈 3～5 個音</li>
+              <li>可愛師父用這些音即興創作</li>
+              <li>分身師父也用這些音創作</li>
+              <li>大家舉手投票！</li>
+            </ol>
           </div>
-          <div class="col ai">
-            <h2>AI</h2>
-            <div id="cmp-ai-meta" class="col-meta"></div>
-            <div id="cmp-ai" class="notation"></div>
+          <div id="live" class="notation live"></div>
+          <div id="score" class="notation score" hidden></div>
+          <div id="compare" class="compare" hidden>
+            <div class="col human">
+              <h2><span class="mascot" data-mascot="master"></span>可愛師父</h2>
+              <div id="cmp-human-meta" class="col-meta"></div>
+              <div id="cmp-human-scroll" class="col-scroll"><div id="cmp-human" class="notation"></div></div>
+            </div>
+            <div class="col ai">
+              <h2><span class="mascot" data-mascot="clone"></span>分身師父</h2>
+              <div id="cmp-ai-meta" class="col-meta"></div>
+              <div id="cmp-ai-scroll" class="col-scroll"><div id="cmp-ai" class="notation"></div></div>
+            </div>
           </div>
         </div>
       </section>
@@ -69,10 +88,10 @@
             <option value="16">16 小節</option>
           </select>
         </label>
-        <label title="AI 自己選時，會挑適合這 3 個音的曲風">曲風 <select id="ai-feel"></select></label>
+        <label title="AI 自己選時，會挑適合小朋友這幾個音的曲風">曲風 <select id="ai-feel"></select></label>
         <label title="留空時用 AI 為這首曲子選的速度">AI 速度 <input id="ai-bpm" type="number" min="50" max="160" step="1" placeholder="自動" /> BPM</label>
         <button id="btn-settings">AI 設定</button>
-        <label>真人速度 <input id="bpm" type="number" min="40" max="200" step="1" placeholder="自動" /> BPM</label>
+        <label title="真人（可愛師父）演奏的速度，留空時自動判斷">真人速度 <input id="bpm" type="number" min="40" max="200" step="1" placeholder="自動" /> BPM</label>
         <button id="btn-requantize">重新整理樂譜</button>
         <label><input id="opt-solfege" type="checkbox" checked /> 顯示唱名</label>
         <label><input id="opt-vk" type="checkbox" checked /> 螢幕鍵盤</label>

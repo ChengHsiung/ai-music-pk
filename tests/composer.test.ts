@@ -94,6 +94,20 @@ describe('composeOffline', () => {
     }
   });
 
+  it('takes motifs of four and five notes', () => {
+    let seed = 777;
+    const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let t = 0; t < 80; t++) {
+      const motif = Array.from({ length: 4 + (t % 2) }, () => 52 + Math.floor(rand() * 25));
+      const key = detectKey(motif.map((midi) => ({ midi })));
+      const bars = [8, 12, 16][t % 3];
+      const m = composeOffline({ motif, key, bars, seed: t });
+      expectWellFormed(m, motif, bars);
+      // The whole motif fits in the first bar, and the consequent opens with it again.
+      expect(m.notes[motif.length - 1].start).toBeLessThan(16);
+    }
+  });
+
   it('works in minor keys and with the motif in the bass', () => {
     const motif = [45, 48, 52];
     const m = composeOffline({ motif, key: A_MINOR, bars: 8, seed: 3 });
@@ -187,6 +201,15 @@ describe('offline', () => {
     expect(m.left!.length).toBeGreaterThan(8);
     expect(m.title).toBeTruthy();
     expect(m.idea).toContain('Do Mi Sol');
+  });
+
+  it('sings a farewell in longer notes', () => {
+    const req = { motif: [60, 64, 67], key: C_MAJOR, bars: 8 };
+    const avg = (feel: 'farewell' | 'bright') => {
+      const ms = [1, 2, 3, 4, 5, 6, 7, 8].map((seed) => offline({ ...req, seed, feel }));
+      return sumDur(ms.flatMap((m) => m.notes)) / ms.reduce((n, m) => n + m.notes.length, 0);
+    };
+    expect(avg('farewell')).toBeGreaterThan(avg('bright') * 1.2);
   });
 
   it('follows the host and avoids the last feel on "compose again"', () => {

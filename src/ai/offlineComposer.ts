@@ -54,11 +54,16 @@ export function phrasePlan(bars: number): BarPlan[] {
   return [...ANTECEDENT, ...CONSEQUENT];
 }
 
-// One-bar rhythms in sixteenth notes (4/4). Motif bars need at least three notes;
-// cadence bars end on a long note.
-const CELL_RHYTHMS = [[4, 4, 8], [4, 4, 4, 4], [2, 2, 4, 8], [4, 2, 2, 4, 4], [6, 2, 4, 4], [4, 4, 2, 2, 4], [2, 2, 4, 4, 4]];
+// One-bar rhythms in sixteenth notes (4/4). Motif bars need a note for each of the child's
+// notes (three to five); cadence bars end on a long note.
+const CELL_RHYTHMS = [
+  [4, 4, 8], [4, 4, 4, 4], [2, 2, 4, 8], [4, 2, 2, 4, 4], [6, 2, 4, 4], [4, 4, 2, 2, 4], [2, 2, 4, 4, 4],
+  [2, 2, 2, 2, 8], [4, 2, 2, 2, 2, 4], [3, 1, 4, 4, 4],
+];
 const FREE_RHYTHMS = [[4, 4, 4, 4], [4, 2, 2, 4, 4], [2, 2, 2, 2, 4, 4], [4, 4, 2, 2, 4], [6, 2, 4, 4], [8, 4, 4], [2, 2, 4, 2, 2, 4]];
 const HALF_RHYTHMS = [[4, 4, 8], [2, 2, 4, 8], [4, 2, 2, 8], [6, 2, 8]];
+/** A farewell sings in long notes. */
+const FAREWELL_RHYTHMS = [[8, 4, 4], [4, 4, 8], [6, 2, 8], [12, 4], [4, 2, 2, 8], [8, 8]];
 const FINAL_RHYTHMS = [[4, 4, 8], [2, 2, 4, 8], [8, 8], [16]];
 
 const mod = (n: number, m: number) => ((n % m) + m) % m;
@@ -146,8 +151,12 @@ function composeOnce(req: ComposeRequest, rng: () => number): MelodyNote[] {
   const center = Math.round(motifDeg.reduce((a, b) => a + b, 0) / motifDeg.length);
   const inRange = (ds: number[]) => ds.every((d) => d >= lo && d <= hi);
 
-  const cellRhythm = pick(rng, CELL_RHYTHMS);
-  const freeRhythms = [pick(rng, FREE_RHYTHMS), pick(rng, FREE_RHYTHMS)];
+  const farewell = req.feel === 'farewell';
+  const cells = CELL_RHYTHMS.filter((r) => r.length >= req.motif.length);
+  const held = cells.filter((r) => r.at(-1)! >= 8); // the motif ends on a long note
+  const cellRhythm = pick(rng, farewell && held.length ? held : cells);
+  const free = farewell ? FAREWELL_RHYTHMS : FREE_RHYTHMS;
+  const freeRhythms = [pick(rng, free), pick(rng, free)];
 
   // Lay out every note slot with its fixed pitches.
   const slots: Slot[] = [];

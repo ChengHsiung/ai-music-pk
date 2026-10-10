@@ -42,6 +42,7 @@ const OFFLINE_TITLES: Record<Feel, string[]> = {
   bright: ['跳跳糖', '開心小步舞', '泡泡飛呀飛'],
   march: ['勇敢小兵', '出發吧！', '小小探險隊'],
   mysterious: ['森林的秘密', '月夜探險', '神秘的門'],
+  farewell: ['揮揮手說再見', '下次再見喔', '風箏飛走了'],
 };
 
 const OFFLINE_PICTURE: Record<Feel, string> = {
@@ -50,6 +51,7 @@ const OFFLINE_PICTURE: Record<Feel, string> = {
   bright: '像小兔子在草地上跳來跳去',
   march: '像小隊伍神氣地向前走',
   mysterious: '像在月光下打開一扇神秘的門',
+  farewell: '像揮著手和好朋友說再見，捨不得又溫暖',
 };
 
 /** The feel for a tune: the host's choice, or one that suits the motif and differs from the last tune. */
@@ -61,7 +63,7 @@ export function chooseFeel(req: ComposeRequest): Feel {
 
 export function offline(req: ComposeRequest): Melody {
   const feel = chooseFeel(req);
-  const m = finishMelody({ ...composeOffline(req), feel }, feel);
+  const m = finishMelody({ ...composeOffline({ ...req, feel }), feel }, feel);
   const minor = req.key.mode === 'minor';
   const motif = req.motif.map((n) => solfege(n, req.key.fifths, minor)).join(' ');
   const fresh = OFFLINE_TITLES[feel].filter((t) => !req.avoidTitles?.includes(t));
