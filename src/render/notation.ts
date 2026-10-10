@@ -182,6 +182,8 @@ export function renderLive(el: HTMLElement, groups: LiveGroup[], opts: DrawOptio
 
 export interface ScoreOptions extends DrawOptions {
   barsPerLine?: number;
+  /** Drawing width in score units; narrower draws larger in the same space */
+  width?: number;
 }
 
 /** Lets a drawn score appear note by note while it is played. */
@@ -204,7 +206,8 @@ export function renderScore(el: HTMLElement, score: QuantizedScore, opts: ScoreO
   const gap = 120;
   const lineHeight = 290;
   const lines = Math.ceil(score.bars.length / barsPerLine);
-  const ctx = makeRenderer(el, lines * lineHeight + 20);
+  const pageWidth = opts.width ?? WIDTH;
+  const ctx = makeRenderer(el, lines * lineHeight + 20, pageWidth);
   const drawOpts: DrawOptions = { ...opts, fifths: score.key.fifths, minor: score.key.mode === 'minor' };
   const time = `${score.beatsPerBar}/4`;
 
@@ -224,7 +227,7 @@ export function renderScore(el: HTMLElement, score: QuantizedScore, opts: ScoreO
     const line = Math.floor(b / barsPerLine);
     const col = b % barsPerLine;
     const head = line === 0 ? headerFirst : header;
-    const barWidth = (WIDTH - 2 * MARGIN - head) / barsPerLine;
+    const barWidth = (pageWidth - 2 * MARGIN - head) / barsPerLine;
     const x = col === 0 ? MARGIN : MARGIN + head + col * barWidth;
     const width = col === 0 ? barWidth + head : barWidth;
     const y = 30 + line * lineHeight;
