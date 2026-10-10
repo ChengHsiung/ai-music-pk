@@ -163,7 +163,7 @@ body {
 }
 .controls .group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .controls label { display: flex; align-items: center; gap: 6px; font-size: 15px; }
-.controls input[type='number'] { width: 72px; padding: 6px; font-size: 15px; border-radius: 6px; border: 0; }
+.controls input[type='number'] { width: 92px; padding: 6px; font-size: 15px; border-radius: 6px; border: 0; }
 button {
   font: inherit;
   font-size: 15px;

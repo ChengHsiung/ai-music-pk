@@ -30,7 +30,7 @@ function read(bytes: Uint8Array) {
       if (type === 0x51) tempo = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
       i += n;
     } else {
-      notes.push({ type: status === 0x90 ? 'on' : 'off', tick, midi: bytes[i], vel: bytes[i + 1] });
+      notes.push({ type: status === 0x90 ? 'on' : status === 0xb0 ? 'cc' : 'off', tick, midi: bytes[i], vel: bytes[i + 1] });
       i += 2;
     }
   }
@@ -59,6 +59,31 @@ describe('writeMidiFile', () => {
       { type: 'off', tick: 2 * PPQ, midi: 64, vel: 0 },
       { type: 'on', tick: 2 * PPQ, midi: 67, vel: 90 },
       { type: 'off', tick: 302 * PPQ, midi: 67, vel: 0 },
+    ]);
+  });
+
+  it('writes the sustain pedal between note-offs and note-ons at the same tick', () => {
+    const f = read(
+      writeMidiFile(
+        [
+          { midi: 48, tick: 0, dur: PPQ, velocity: 60 },
+          { midi: 50, tick: PPQ, dur: PPQ, velocity: 60 },
+        ],
+        100,
+        '',
+        [
+          { tick: 30, controller: 64, value: 127 },
+          { tick: PPQ, controller: 64, value: 0 },
+        ],
+      ),
+    );
+    expect(f.notes).toEqual([
+      { type: 'on', tick: 0, midi: 48, vel: 60 },
+      { type: 'cc', tick: 30, midi: 64, vel: 127 },
+      { type: 'off', tick: PPQ, midi: 48, vel: 0 },
+      { type: 'cc', tick: PPQ, midi: 64, vel: 0 },
+      { type: 'on', tick: PPQ, midi: 50, vel: 60 },
+      { type: 'off', tick: 2 * PPQ, midi: 50, vel: 0 },
     ]);
   });
 });

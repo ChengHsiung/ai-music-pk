@@ -24,6 +24,7 @@ export const COLORS = {
   ink: '#111111',
   motif: '#e8590c',
   current: '#1c7ed6',
+  accompaniment: '#868e96',
   label: '#495057',
 };
 
@@ -46,6 +47,8 @@ export interface DrawOptions {
   showSolfege: boolean;
   /** Event ids drawn in the motif colour */
   motifIds?: Set<number>;
+  /** Event ids of an accompaniment, drawn in grey without solfège so the melody stands out */
+  accompaniment?: (id: number) => boolean;
 }
 
 /** Draws into a fresh SVG that scales to the container width. */
@@ -102,8 +105,19 @@ function chordNote(
   return note;
 }
 
+function isAccompaniment(ids: number[], opts: DrawOptions): boolean {
+  return !!opts.accompaniment && ids.length > 0 && ids.every(opts.accompaniment);
+}
+
+const painted = new WeakMap<StaveNote, string>();
+
 function paint(note: StaveNote, color: string) {
-  note.setStyle({ fillStyle: color, strokeStyle: color });
+  const style = { fillStyle: color, strokeStyle: color };
+  note.setStyle(style);
+  note.setStemStyle(style);
+  note.setLedgerLineStyle(style);
+  if (note.hasFlag()) note.setFlagStyle(style);
+  painted.set(note, color);
 }
 
 function drawGrandStaff(ctx: RenderContext, x: number, y: number, width: number, gap: number, opts: {
@@ -277,7 +291,14 @@ export function renderScore(el: HTMLElement, score: QuantizedScore, opts: ScoreO
       });
       const voice = new Voice({ numBeats: score.beatsPerBar, beatValue: 4 }).setMode(Voice.Mode.SOFT).addTickables(notes);
       voices.push(voice);
-      beams.push(...Beam.generateBeams(notes.filter((n) => !n.isRest()) as StaveNote[], { maintainStemDirections: false }));
+      const barBeams = Beam.generateBeams(notes.filter((n) => !n.isRest()) as StaveNote[], { maintainStemDirections: false });
+      // Beaming rebuilds the stems, so coloured notes are painted again.
+      notes.forEach((n) => painted.has(n) && paint(n, painted.get(n)!));
+      for (const beam of barBeams) {
+        const ids = beam.getNotes().flatMap((n) => bar[staff][notes.indexOf(n as StaveNote)]?.ids ?? []);
+        if (isAccompaniment(ids, drawOpts)) beam.setStyle({ fillStyle: COLORS.accompaniment, strokeStyle: COLORS.accompaniment });
+      }
+      beams.push(...barBeams);
     }
 
     const available = treble.getNoteEndX() - treble.getNoteStartX() - 16;
@@ -285,7 +306,7 @@ export function renderScore(el: HTMLElement, score: QuantizedScore, opts: ScoreO
     voices[0].draw(ctx, treble);
     voices[1].draw(ctx, bass);
     beams.forEach((beam) => {
-      beam.setContext(ctx).draw();
+      beam.setContext(ctx).drawWithStyle();
       // A beam appears with its first note.
       const step = Math.min(...beam.getNotes().map((n) => stepOf.get(n as StaveNote) ?? 0));
       marks.push({ element: beam, step, ids: [] });
@@ -326,6 +347,9 @@ function tickToNote(t: Tick, staff: StaffName, opts: DrawOptions, barState: Map<
   if (t.rest) {
     note = new StaveNote({ keys: [staff === 'treble' ? 'b/4' : 'd/3'], duration: duration + 'r', clef: staff });
     if (t.dur === 16) note.setCenterAlignment(true); // whole-bar rest sits in the middle of the bar
+  } else if (isAccompaniment(t.ids, opts)) {
+    note = chordNote(t.midis, staff, duration, { ...opts, showSolfege: false }, barState, t.tiedFromPrev);
+    paint(note, COLORS.accompaniment);
   } else {
     note = chordNote(t.midis, staff, duration, opts, barState, t.tiedFromPrev);
     if (t.ids.some((id) => opts.motifIds?.has(id))) paint(note, COLORS.motif);

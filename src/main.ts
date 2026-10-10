@@ -1,15 +1,17 @@
 import './styles.css';
 import { cloudEnabled, compose, ComposeSettings, describeError, Engine, offline } from './ai/composer';
 import { composeCloud } from './ai/cloudComposer';
-import { AI_ID_BASE, ComposeRequest, Melody, scoreFromMelody } from './ai/melody';
-import { eventsTrack, melodyTrack, MidiOutput, Player, SpeakerOutput, velocity } from './ai/player';
+import { Feel, FEEL_LABEL, FEELS } from './ai/accompaniment';
+import { AI_ID_BASE, AI_LEFT_ID, ComposeRequest, Melody, scoreFromMelody } from './ai/melody';
+import { PianoOutput } from './ai/piano';
+import { eventsTrack, LEFT_ID, leftVelocity, melodyTrack, MidiOutput, Player, SpeakerOutput, velocity } from './ai/player';
 import { MidiIO, MidiStatus } from './io/midi';
 import { VirtualKeyboard } from './io/virtualKeyboard';
-import { PPQ, writeMidiFile } from './music/midiFile';
+import { MidiFileControl, PPQ, writeMidiFile } from './music/midiFile';
 import { clusterOnsets, NoteEvent, quantize, QuantizedScore } from './music/quantize';
 import { C_MAJOR, detectKey, Key, keyLabel, noteName, pitchClass, solfege } from './music/theory';
 import { LiveGroup, renderLive, renderScore, ScoreView } from './render/notation';
-import { ConsoleButton, HostConsole } from './ui/hostConsole';
+import { ConsoleButton, feelOptions, HostConsole } from './ui/hostConsole';
 
 type Stage = 'title' | 'free' | 'motif' | 'ready' | 'performing' | 'review' | 'ai' | 'compare';
 type AiStatus = 'composing' | 'playing' | 'paused' | 'done';
@@ -35,6 +37,8 @@ const state = {
   motif: [] as NoteEvent[],
   motifKey: C_MAJOR as Key,
   performance: [] as NoteEvent[],
+  /** The musician's sustain pedal during the performance */
+  pedalEvents: [] as PedalRecord[],
   held: new Map<number, NoteEvent>(),
   score: null as QuantizedScore | null,
   showSolfege: true,
@@ -50,6 +54,10 @@ const state = {
     line: -1,
     seed: 1,
     composeStarted: 0,
+    /** The character of the tune "compose again" replaced, so the next one differs */
+    avoidFeel: undefined as Feel | undefined,
+    /** Titles of the tunes "compose again" replaced in this round */
+    replacedTitles: [] as string[],
   },
   /** What the player is playing, and the ids sounding now (for highlighting) */
   playback: null as null | 'ai' | 'human',
@@ -60,15 +68,23 @@ const state = {
 
 interface Settings extends ComposeSettings {
   bars: number;
-  bpm: number;
+  /** The AI's character: the host's choice, or 'auto' to let the composer pick one that suits the notes */
+  feel: Feel | 'auto';
+  /** The AI's tempo; null plays each tune at the tempo its composer chose */
+  aiBpm: number | null;
   output: 'auto' | 'speaker';
 }
 
 /** Kept in this browser only (the API key never leaves the event computer except to call Claude). */
 function loadSettings(): Settings {
-  const defaults: Settings = { engine: 'auto', apiKey: '', bars: 8, bpm: 96, output: 'auto' };
+  const defaults: Settings = { engine: 'auto', apiKey: '', bars: 8, feel: 'auto', aiBpm: null, output: 'auto' };
   try {
-    return { ...defaults, ...JSON.parse(localStorage.getItem('ai-music-pk.settings') ?? '{}') };
+    // Older versions kept a fixed tempo in `bpm`; tempo now follows each tune unless the host sets one.
+    const { bpm: _old, ...saved } = JSON.parse(localStorage.getItem('ai-music-pk.settings') ?? '{}');
+    const s: Settings = { ...defaults, ...saved };
+    if (s.feel !== 'auto' && !FEELS.includes(s.feel)) s.feel = 'auto';
+    if (typeof s.aiBpm !== 'number') s.aiBpm = null;
+    return s;
   } catch {
     return defaults;
   }
@@ -84,14 +100,24 @@ function saveSettings() {
 
 const settings = loadSettings();
 
+/** The tempo the AI's tune is played and drawn at. */
+function aiBpm(m: Melody): number {
+  return settings.aiBpm ?? m.bpm ?? 96;
+}
+
 // ---------------------------------------------------------------- rounds
+
+interface PedalRecord {
+  time: number;
+  down: boolean;
+}
 
 interface RoundRecord {
   n: number;
   at: string;
   motif: number[];
   key: Key;
-  human: { notes: { midi: number; start: number; end: number; velocity: number }[]; bpm: number } | null;
+  human: { notes: { midi: number; start: number; end: number; velocity: number }[]; pedals?: PedalRecord[]; bpm: number } | null;
   ai: { melody: Melody; bpm: number } | null;
 }
 
@@ -127,9 +153,13 @@ function saveRound() {
   r.key = state.motifKey;
   const played = state.performance.filter((e) => e.end !== null);
   r.human = played.length && state.score
-    ? { notes: played.map((e) => ({ midi: e.midi, start: e.start, end: e.end!, velocity: e.velocity })), bpm: state.score.bpm }
+    ? {
+        notes: played.map((e) => ({ midi: e.midi, start: e.start, end: e.end!, velocity: e.velocity })),
+        pedals: state.pedalEvents.length ? [...state.pedalEvents] : undefined,
+        bpm: state.score.bpm,
+      }
     : null;
-  r.ai = state.ai.melody ? { melody: state.ai.melody, bpm: settings.bpm } : null;
+  r.ai = state.ai.melody ? { melody: state.ai.melody, bpm: aiBpm(state.ai.melody) } : null;
   storeRounds();
   updateChrome();
 }
@@ -142,6 +172,7 @@ function roundHasContent() {
 function downloadMidi(n: number, which: 'human' | 'ai') {
   const r = rounds.find((x) => x.n === n);
   let bytes: Uint8Array | null = null;
+  const pedal = (tick: number, down: boolean): MidiFileControl => ({ tick, controller: 64, value: down ? 127 : 0 });
   if (which === 'human' && r?.human) {
     const { notes, bpm } = r.human;
     const t0 = Math.min(...notes.map((x) => x.start));
@@ -150,14 +181,20 @@ function downloadMidi(n: number, which: 'human' | 'ai') {
       notes.map((x) => ({ midi: x.midi, tick: (x.start - t0) * ticksPerMs, dur: (x.end - x.start) * ticksPerMs, velocity: x.velocity })),
       bpm,
       `第 ${n} 局・真人音樂家`,
+      (r.human.pedals ?? []).map((p) => pedal(Math.max(0, p.time - t0) * ticksPerMs, p.down)),
     );
   } else if (which === 'ai' && r?.ai) {
     const { melody, bpm } = r.ai;
     const perStep = PPQ / 4;
     bytes = writeMidiFile(
-      melody.notes.map((x, i) => ({ midi: x.midi, tick: x.start * perStep, dur: x.dur * perStep, velocity: velocity(melody, i) })),
+      [
+        ...melody.notes.map((x, i) => ({ midi: x.midi, tick: x.start * perStep, dur: x.dur * perStep, velocity: velocity(melody, i) })),
+        ...(melody.left ?? []).map((x) => ({ midi: x.midi, tick: x.start * perStep, dur: x.dur * perStep, velocity: leftVelocity(melody, x) })),
+      ],
       bpm,
       `第 ${n} 局・AI${melody.title ? `《${melody.title}》` : ''}`,
+      // The pedal changes with each chord: up as it ends, down just after the next begins.
+      (melody.pedals ?? []).flatMap((p) => [pedal(p.start * perStep + PPQ / 16, true), pedal(p.end * perStep - 1, false)]),
     );
   }
   if (!bytes) return;
@@ -207,6 +244,13 @@ function closeHeld(midi: number, time: number) {
   state.held.delete(midi);
 }
 
+/** The musician's sustain pedal is recorded with the performance, so the replay sounds as played. */
+function pedalChange(down: boolean, time: number) {
+  if (state.stage !== 'ready' && state.stage !== 'performing') return;
+  if (state.pedalEvents.at(-1)?.down === down) return; // a half-pedal sends many values; keep the changes
+  state.pedalEvents.push({ time, down });
+}
+
 function noteOff(midi: number, _velocity: number, time: number) {
   vk.highlight(midi, false);
   closeHeld(midi, time);
@@ -239,6 +283,7 @@ function captureMotif(ev: NoteEvent) {
 function setStage(stage: Stage) {
   stopPlayback();
   if (state.stage === 'ai' && stage !== 'ai') aiToken++; // drop a pending "show the tune"
+  const previous = state.stage;
   state.stage = stage;
   if (stage === 'motif') {
     job?.controller.abort(); // a new motif needs a new tune
@@ -248,10 +293,14 @@ function setStage(stage: Stage) {
     state.score = null;
     state.ai.melody = null;
     state.ai.seed = 1;
+    state.ai.avoidFeel = undefined;
+    state.ai.replacedTitles = [];
   }
   if (stage === 'ready' || stage === 'performing') {
     state.performance = [];
     state.score = null;
+    // A pedal pressed while waiting for the first note belongs to the performance.
+    if (stage === 'ready' || previous !== 'ready') state.pedalEvents = [];
   }
   if (stage === 'ready' && state.motif.length === 3) saveRound();
   if (stage === 'review') finishPerformance();
@@ -344,7 +393,22 @@ let aiToken = 0;
 let aiView: ScoreView | null = null;
 
 function aiRequest(): ComposeRequest {
-  return { motif: state.motif.map((e) => e.midi), key: state.motifKey, bars: settings.bars, seed: state.ai.seed };
+  return {
+    motif: state.motif.map((e) => e.midi),
+    key: state.motifKey,
+    bars: settings.bars,
+    seed: state.ai.seed,
+    feel: settings.feel === 'auto' ? undefined : settings.feel,
+    avoidFeel: settings.feel === 'auto' ? state.ai.avoidFeel : undefined,
+    avoidTitles: usedTitles(),
+  };
+}
+
+/** Titles from earlier rounds and replaced tunes, newest last, so a new tune gets a new picture. */
+function usedTitles(): string[] | undefined {
+  const earlier = rounds.filter((r) => r.n !== state.round).flatMap((r) => (r.ai?.melody.title ? [r.ai.melody.title] : []));
+  const titles = [...new Set([...earlier, ...state.ai.replacedTitles])].slice(-8);
+  return titles.length ? titles : undefined;
 }
 
 /** Starts composing for the current motif and settings, or reuses the job already running. */
@@ -373,7 +437,11 @@ async function startAi(again = false) {
     flash('請先讓小朋友彈 3 個音');
     return;
   }
-  if (again) state.ai.seed++;
+  if (again) {
+    state.ai.seed++;
+    state.ai.avoidFeel = state.ai.melody?.feel;
+    if (state.ai.melody?.title) state.ai.replacedTitles.push(state.ai.melody.title);
+  }
   setStage('ai');
   Object.assign(state.ai, { status: 'composing', melody: null, step: 0, nowIds: [], line: -1, composeStarted: performance.now() });
   updateChrome();
@@ -420,7 +488,7 @@ function playAi(delayMs = 300) {
   state.playback = 'ai';
   state.dirty = true;
   updateChrome();
-  player.play(melodyTrack(m, settings.bpm), output(), 0, delayMs);
+  player.play(melodyTrack(m, aiBpm(m)), output(), 0, delayMs);
 }
 
 function togglePause() {
@@ -482,10 +550,20 @@ function applyViews(scroll: boolean) {
 
 const player = new Player({
   onNote(_i, n) {
+    const m = state.playback === 'ai' ? state.ai.melody : null;
+    if (n.part === 'left') {
+      // The left hand only uncovers its notes; the light and the colour follow the melody.
+      const note = m?.left?.[n.id - LEFT_ID];
+      if (note && state.stage === 'ai') {
+        state.ai.step = Math.max(state.ai.step, note.start + 1);
+        applyAiView(true);
+      }
+      return;
+    }
     vkLight(n.midi);
-    if (state.playback === 'ai' && state.ai.melody) {
-      const note = state.ai.melody.notes[n.id];
-      state.ai.step = state.stage === 'ai' ? note.start + 1 : Infinity;
+    if (m) {
+      const note = m.notes[n.id];
+      state.ai.step = state.stage === 'ai' ? Math.max(state.ai.step, note.start + 1) : Infinity;
       state.ai.nowIds = [AI_ID_BASE + n.id];
       state.playIds = state.ai.nowIds;
     } else {
@@ -534,10 +612,10 @@ function toggleReplay(which: 'human' | 'ai') {
   stopPlayback();
   if (which === 'ai' && state.ai.melody) {
     state.playback = 'ai';
-    player.play(melodyTrack(state.ai.melody, settings.bpm), output(), 0, 200);
+    player.play(melodyTrack(state.ai.melody, aiBpm(state.ai.melody)), output(), 0, 200);
   } else if (which === 'human' && state.performance.length) {
     state.playback = 'human';
-    player.play(eventsTrack(state.performance), output(), 0, 200);
+    player.play(eventsTrack(state.performance, state.pedalEvents), output(), 0, 200);
   }
   updateChrome();
 }
@@ -576,8 +654,12 @@ function scoreMeta(score: QuantizedScore) {
 }
 
 function aiMeta(m: Melody) {
-  return `${keyLabel(m.key)}・每分鐘 ${settings.bpm} 拍・共 ${m.bars} 小節・${m.engine === 'cloud' ? '雲端 AI（Claude）' : '離線 AI'}`;
+  const feel = m.feel ? `${FEEL_LABEL[m.feel]}・` : '';
+  return `${keyLabel(m.key)}・${feel}每分鐘 ${aiBpm(m)} 拍・共 ${m.bars} 小節・${m.engine === 'cloud' ? '雲端 AI（Claude）' : '離線 AI'}`;
 }
+
+/** The AI's left hand is drawn in grey so the melody stands out. */
+const isAiLeft = (id: number) => id >= AI_LEFT_ID;
 
 function drawSheet() {
   const live = $('live');
@@ -603,9 +685,10 @@ function drawSheet() {
     }
     const m = state.ai.melody;
     if (m) {
-      cmpViews.ai = renderScore($('cmp-ai'), scoreFromMelody(m, settings.bpm), {
+      cmpViews.ai = renderScore($('cmp-ai'), scoreFromMelody(m, aiBpm(m)), {
         ...common,
         motifIds: aiMotif,
+        accompaniment: isAiLeft,
         fifths: m.key.fifths,
         width: COMPARE_WIDTH,
       });
@@ -621,7 +704,7 @@ function drawSheet() {
   if (state.stage === 'ai' && state.ai.melody) {
     const m = state.ai.melody;
     scoreEl.hidden = false;
-    aiView = renderScore(scoreEl, scoreFromMelody(m, settings.bpm), { ...common, motifIds: aiMotif, fifths: m.key.fifths });
+    aiView = renderScore(scoreEl, scoreFromMelody(m, aiBpm(m)), { ...common, motifIds: aiMotif, accompaniment: isAiLeft, fifths: m.key.fifths });
     applyAiView(false);
     $('score-meta').textContent = aiMeta(m);
     return;
@@ -752,7 +835,8 @@ function runAction(id: string, arg?: string) {
     return updateChrome();
   }
   if (id === 'bars') return setBars(Number(arg));
-  if (id === 'bpm') return setBpm(Number(arg));
+  if (id === 'feel') return setFeel(arg ?? 'auto');
+  if (id === 'bpm') return setAiBpm(arg ?? '');
   if (id === 'human-bpm') {
     $<HTMLInputElement>('bpm').value = arg ?? '';
     if (state.stage === 'review') setStage('review');
@@ -820,6 +904,7 @@ function updateChrome() {
   $('idea').textContent = state.stage === 'ai' ? (state.ai.melody?.idea ?? '') : '';
   document.body.dataset.stage = state.stage;
   $<HTMLButtonElement>('btn-requantize').disabled = state.stage !== 'review';
+  $<HTMLInputElement>('ai-bpm').placeholder = aiBpmPlaceholder();
 
   // The same actions drive the footer (fallback) and the console window.
   const buttons = [NEXT, ...ACTIONS.filter(isVisible)].map(asButton);
@@ -838,7 +923,8 @@ function updateChrome() {
     next: asButton(NEXT),
     buttons: buttons.slice(1),
     bars: settings.bars,
-    bpm: settings.bpm,
+    feel: settings.feel,
+    aiBpm: { value: settings.aiBpm === null ? '' : String(settings.aiBpm), placeholder: aiBpmPlaceholder() },
     humanBpm: {
       value: $<HTMLInputElement>('bpm').value,
       detected: state.score ? String(state.score.bpm) : '',
@@ -870,7 +956,9 @@ function showMidiStatus(s: MidiStatus) {
 
 const midi = new MidiIO();
 const midiOut = new MidiOutput(midi);
-const speaker = new SpeakerOutput();
+// The sampled piano, with the small synth standing in while the samples load.
+const speaker = new PianoOutput(new SpeakerOutput());
+speaker.load();
 const vk = new VirtualKeyboard($('vk'), noteOn, noteOff);
 const hostConsole = new HostConsole({
   action: runAction,
@@ -906,14 +994,17 @@ $('btn-test').addEventListener('click', () => {
   [60, 64, 67, 72].forEach((m, i) => midi.send(m, 80, 380, t + i * 400));
 });
 
-// AI settings: length and tempo in the footer and the console, the rest in a dialog.
+// AI settings: length, character and tempo in the footer and the console, the rest in a dialog.
 const barsSelect = $<HTMLSelectElement>('ai-bars');
+const feelSelect = $<HTMLSelectElement>('ai-feel');
 const bpmInput = $<HTMLInputElement>('ai-bpm');
 const engineSelect = $<HTMLSelectElement>('ai-engine');
 const keyInput = $<HTMLInputElement>('ai-key');
 const outputSelect = $<HTMLSelectElement>('ai-output');
 barsSelect.value = String(settings.bars);
-bpmInput.value = String(settings.bpm);
+feelSelect.innerHTML = feelOptions();
+feelSelect.value = settings.feel;
+bpmInput.value = settings.aiBpm === null ? '' : String(settings.aiBpm);
 engineSelect.value = settings.engine;
 keyInput.value = settings.apiKey;
 outputSelect.value = settings.output;
@@ -927,16 +1018,32 @@ function setBars(bars: number) {
   updateChrome();
 }
 
-function setBpm(bpm: number) {
-  settings.bpm = Math.min(160, Math.max(50, Math.round(bpm) || 96));
-  bpmInput.value = String(settings.bpm);
+function setFeel(feel: string) {
+  settings.feel = (FEELS as readonly string[]).includes(feel) ? (feel as Feel) : 'auto';
+  feelSelect.value = settings.feel;
+  saveSettings();
+  if (['ready', 'performing', 'review'].includes(state.stage)) ensureJob();
+  updateChrome();
+}
+
+/** Empty means each tune keeps the tempo its composer chose. */
+function setAiBpm(text: string) {
+  const bpm = Math.round(Number(text));
+  settings.aiBpm = text.trim() === '' || !bpm ? null : Math.min(160, Math.max(50, bpm));
+  bpmInput.value = settings.aiBpm === null ? '' : String(settings.aiBpm);
   saveSettings();
   state.dirty = true;
   updateChrome();
 }
 
+function aiBpmPlaceholder(): string {
+  const m = state.ai.melody;
+  return m?.bpm ? `自動 ${m.bpm}` : '自動';
+}
+
 barsSelect.addEventListener('change', () => setBars(Number(barsSelect.value)));
-bpmInput.addEventListener('change', () => setBpm(Number(bpmInput.value)));
+feelSelect.addEventListener('change', () => setFeel(feelSelect.value));
+bpmInput.addEventListener('change', () => setAiBpm(bpmInput.value));
 engineSelect.addEventListener('change', () => {
   settings.engine = engineSelect.value as Engine;
   saveSettings();
@@ -971,7 +1078,8 @@ $('btn-test-cloud').addEventListener('click', async () => {
   const t0 = performance.now();
   try {
     const m = await composeCloud({ motif: [60, 64, 67], key: C_MAJOR, bars: 8 }, key);
-    out.textContent = `成功：${((performance.now() - t0) / 1000).toFixed(0)} 秒寫好《${m.title ?? ''}》，共 ${m.notes.length} 個音`;
+    const feel = m.feel ? `${FEEL_LABEL[m.feel]}、` : '';
+    out.textContent = `成功：${((performance.now() - t0) / 1000).toFixed(0)} 秒寫好《${m.title ?? ''}》（${feel}每分鐘 ${m.bpm} 拍），共 ${m.notes.length} 個音`;
   } catch (err) {
     out.textContent = `失敗：${describeError(err)}`;
   }
@@ -992,6 +1100,7 @@ setInterval(() => state.stage === 'ai' && state.ai.status === 'composing' && upd
 
 midi.onNoteOn(noteOn);
 midi.onNoteOff(noteOff);
+midi.onPedal(pedalChange);
 midi.onStatus(showMidiStatus);
 updateChrome();
 document.fonts.load('30px Bravura').finally(() => {

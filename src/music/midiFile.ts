@@ -8,6 +8,13 @@ export interface MidiFileNote {
   velocity: number;
 }
 
+/** A control change such as the sustain pedal (64) */
+export interface MidiFileControl {
+  tick: number;
+  controller: number;
+  value: number;
+}
+
 export const PPQ = 480;
 
 function varLen(n: number): number[] {
@@ -19,8 +26,11 @@ function varLen(n: number): number[] {
 const u32 = (n: number) => [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
 const ascii = (s: string) => [...s].map((c) => c.charCodeAt(0));
 
-export function writeMidiFile(notes: MidiFileNote[], bpm: number, name = ''): Uint8Array {
+export function writeMidiFile(notes: MidiFileNote[], bpm: number, name = '', controls: MidiFileControl[] = []): Uint8Array {
   const events: { tick: number; order: number; bytes: number[] }[] = [];
+  for (const c of controls) {
+    events.push({ tick: Math.max(0, Math.round(c.tick)), order: 0.5, bytes: [0xb0, c.controller & 0x7f, Math.max(0, Math.min(127, Math.round(c.value)))] });
+  }
   for (const n of notes) {
     const midi = Math.max(0, Math.min(127, Math.round(n.midi)));
     const vel = Math.max(1, Math.min(127, Math.round(n.velocity)));
