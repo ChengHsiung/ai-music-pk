@@ -424,6 +424,11 @@ button[hidden] { display: none; }
 .settings .row { display: flex; align-items: center; gap: 10px; }
 .settings .row.end { justify-content: flex-end; margin-top: 6px; }
 
+/* In a plain browser window the music keeps the first screen, with the host's main buttons along its
+   bottom edge; the settings and the on-screen piano sit below, so the page scrolls there. */
+body:not(.projector):not(.has-console) { height: auto; min-height: 100dvh; overflow: auto; }
+body:not(.projector):not(.has-console) .stage { flex: none; height: calc(100dvh - 140px); min-height: 380px; }
+
 /* In fullscreen the host controls float over the bottom, hidden until the mouse reaches them. */
 .projector .controls { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; opacity: 0; }
 .projector .controls:hover { opacity: 1; }

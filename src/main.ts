@@ -615,6 +615,12 @@ const cmpViews: { human: ScoreView | null; ai: ScoreView | null } = { human: nul
 /** Half-width columns draw on a narrower page so the notes stay large. */
 const COMPARE_WIDTH = 1000;
 
+/** Fewer bars on each line of a column when the bars are busy, so the note names do not run together. */
+function compareBarsPerLine(score: QuantizedScore): number {
+  const busiest = Math.max(0, ...score.bars.map((bar) => bar.treble.filter((t) => !t.rest).length));
+  return busiest > 10 ? 2 : busiest > 6 ? 3 : 4;
+}
+
 /** The AI may still be composing when the host skips ahead; show its tune once it is ready. */
 function prepareCompare() {
   if (state.ai.melody || !motifDone()) return;
@@ -718,7 +724,12 @@ function drawSheet() {
 
   if (state.stage === 'compare') {
     if (state.score) {
-      cmpViews.human = renderScore($('cmp-human'), state.score, { ...common, fifths: state.score.key.fifths, width: COMPARE_WIDTH });
+      cmpViews.human = renderScore($('cmp-human'), state.score, {
+        ...common,
+        fifths: state.score.key.fifths,
+        width: COMPARE_WIDTH,
+        barsPerLine: compareBarsPerLine(state.score),
+      });
       $('cmp-human-meta').textContent = scoreMeta(state.score);
     } else {
       $('cmp-human').innerHTML = '<p class="placeholder">（這一局可愛師父沒有演奏）</p>';
@@ -726,8 +737,10 @@ function drawSheet() {
     }
     const m = state.ai.melody;
     if (m) {
-      cmpViews.ai = renderScore($('cmp-ai'), scoreFromMelody(m, aiBpm(m)), {
+      const aiScore = scoreFromMelody(m, aiBpm(m));
+      cmpViews.ai = renderScore($('cmp-ai'), aiScore, {
         ...common,
+        barsPerLine: compareBarsPerLine(aiScore),
         motifIds: aiMotif,
         accompaniment: isAiLeft,
         fifths: m.key.fifths,
@@ -758,13 +771,14 @@ function drawSheet() {
     return;
   }
 
+  // The opening screen shows only the title card, with nothing to scroll to below it.
+  if (state.stage === 'title') return;
   live.hidden = false;
-  const keyless = state.stage === 'free' || state.stage === 'title';
+  const keyless = state.stage === 'free';
   const fifths = keyless ? 0 : state.motifKey.fifths;
   const minor = !keyless && state.motifKey.mode === 'minor';
   const events =
-    state.stage === 'title' ? []
-    : state.stage === 'free' ? state.freeEvents
+    state.stage === 'free' ? state.freeEvents
     : state.stage === 'performing' || state.stage === 'review' ? state.performance
     : state.motif;
   renderLive(live, liveGroups(events), { ...common, fifths, minor });
